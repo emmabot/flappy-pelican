@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Flappy Pelican</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; }
+  canvas { display: block; max-width: 100vw; max-height: 100vh; touch-action: none; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+// ── Constants ──────────────────────────────────────────────
+const W = 480, H = 640;
+const GRAVITY = 0.45;
+const FLAP_STRENGTH = -7.5;
+const PIPE_SPEED = 2.5;
+const PIPE_WIDTH = 60;
+const PIPE_GAP = 130;
+const PIPE_SPAWN_INTERVAL = 1600; // ms between pipe spawns
+const GROUND_HEIGHT = 60;
+const PELICAN_W = 40, PELICAN_H = 30;
+const PELICAN_X = 80;
+
+// ── Canvas Setup ───────────────────────────────────────────
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = W;
+canvas.height = H;
+
+// ── Game State ─────────────────────────────────────────────
+let state = 'menu'; // 'menu' | 'playing' | 'game_over'
+let pelican = { y: 0, vy: 0, rotation: 0 };
+let pipes = [];
+let score = 0;
+let lastPipeSpawn = 0;
+let lastTime = 0;
+let groundOffset = 0;
+
+function resetGame() {
+  pelican.y = H / 2 - 50;
+  pelican.vy = 0;
+  pelican.rotation = 0;
+  pipes = [];
+  score = 0;
+  lastPipeSpawn = 0;
+  lastTime = 0;
+  groundOffset = 0;
+}
+
+// ── Input ──────────────────────────────────────────────────
+function handleInput() {
+  if (state === 'menu') {
+    state = 'playing';
+    resetGame();
+    lastTime = performance.now();
+  } else if (state === 'playing') {
+    pelican.vy = FLAP_STRENGTH;
+  } else if (state === 'game_over') {
+    state = 'menu';
+  }
+}
+
+canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); handleInput(); });
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); handleInput(); }
+});
+
+// ── Pipe Generation ────────────────────────────────────────
+function spawnPipe() {
+  const minTop = 80;
+  const maxTop = H - GROUND_HEIGHT - PIPE_GAP - 80;
+  const topHeight = minTop + Math.random() * (maxTop - minTop);
+  pipes.push({
+    x: W + 10,
+    topH: topHeight,
+    bottomY: topHeight + PIPE_GAP,
+    scored: false
+  });
+}
+
+// ── Collision Detection ────────────────────────────────────
+function checkCollision() {
+  const px = PELICAN_X, py = pelican.y;
+  const pw = PELICAN_W, ph = PELICAN_H;
+
+  // Ground & ceiling
+  if (py + ph >= H - GROUND_HEIGHT) return true;
+  if (py <= 0) return true;
+
+  // Pipes
+  for (const pipe of pipes) {
+    if (px + pw > pipe.x && px < pipe.x + PIPE_WIDTH) {
+      if (py < pipe.topH || py + ph > pipe.bottomY) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// ── Update ─────────────────────────────────────────────────
+function update(now) {
+  if (state !== 'playing') return;
+
+  const dt = Math.min((now - lastTime) / 16.667, 3); // normalize to ~60fps, cap
+  lastTime = now;
+
+  // Pelican physics
+  pelican.vy += GRAVITY * dt;
+  pelican.y += pelican.vy * dt;
+
+  // Rotation based on velocity
+  const targetRot = Math.max(-0.5, Math.min(pelican.vy / 10, 1.2));
+  pelican.rotation += (targetRot - pelican.rotation) * 0.15 * dt;
+
+  // Ground scroll
+  groundOffset = (groundOffset + PIPE_SPEED * dt) % 24;
+
+  // Pipe spawning (time-based)
+  if (pipes.length === 0 || (now - lastPipeSpawn) > PIPE_SPAWN_INTERVAL) {
+    spawnPipe();
+    lastPipeSpawn = now;
+  }
+
+  // Move pipes & score
+  for (let i = pipes.length - 1; i >= 0; i--) {
+    pipes[i].x -= PIPE_SPEED * dt;
+
+    // Score when pelican passes pipe center
+    if (!pipes[i].scored && pipes[i].x + PIPE_WIDTH < PELICAN_X) {
+      pipes[i].scored = true;
+      score++;
+    }
+
+    // Remove off-screen pipes
+    if (pipes[i].x + PIPE_WIDTH < -10) {
+      pipes.splice(i, 1);
+    }
+  }
+
+  // Collision
+  if (checkCollision()) {
+    state = 'game_over';
+  }
+}
+// ── Drawing ────────────────────────────────────────────────
+function drawBackground() {
+  // Sky gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H - GROUND_HEIGHT);
+  grad.addColorStop(0, '#87CEEB');
+  grad.addColorStop(1, '#B0E0E6');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+}
+
+function drawGround() {
+  // Ground base
+  ctx.fillStyle = '#8B7355';
+  ctx.fillRect(0, H - GROUND_HEIGHT, W, GROUND_HEIGHT);
+
+  // Ground top line
+  ctx.fillStyle = '#6B8E23';
+  ctx.fillRect(0, H - GROUND_HEIGHT, W, 8);
+
+  // Ground texture lines
+  ctx.strokeStyle = '#7A6345';
+  ctx.lineWidth = 1;
+  for (let x = -groundOffset; x < W; x += 24) {
+    ctx.beginPath();
+    ctx.moveTo(x, H - GROUND_HEIGHT + 12);
+    ctx.lineTo(x + 12, H - GROUND_HEIGHT + 20);
+    ctx.stroke();
+  }
+}
+
+function drawPipes() {
+  for (const pipe of pipes) {
+    // Top pipe
+    ctx.fillStyle = '#2E8B57';
+    ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+    // Top pipe cap
+    ctx.fillStyle = '#3CB371';
+    ctx.fillRect(pipe.x - 4, pipe.topH - 24, PIPE_WIDTH + 8, 24);
+    // Top pipe border
+    ctx.strokeStyle = '#1B5E20';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+    ctx.strokeRect(pipe.x - 4, pipe.topH - 24, PIPE_WIDTH + 8, 24);
+
+    // Bottom pipe
+    ctx.fillStyle = '#2E8B57';
+    ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, H - GROUND_HEIGHT - pipe.bottomY);
+    // Bottom pipe cap
+    ctx.fillStyle = '#3CB371';
+    ctx.fillRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 24);
+    // Bottom pipe border
+    ctx.strokeStyle = '#1B5E20';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, H - GROUND_HEIGHT - pipe.bottomY);
+    ctx.strokeRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 24);
+  }
+}
+
+function drawPelican() {
+  ctx.save();
+  ctx.translate(PELICAN_X + PELICAN_W / 2, pelican.y + PELICAN_H / 2);
+  ctx.rotate(pelican.rotation);
+
+  // Body (brown rectangle placeholder)
+  ctx.fillStyle = '#8B6914';
+  ctx.fillRect(-PELICAN_W / 2, -PELICAN_H / 2, PELICAN_W, PELICAN_H);
+
+  // Head (lighter)
+  ctx.fillStyle = '#F5DEB3';
+  ctx.fillRect(PELICAN_W / 2 - 12, -PELICAN_H / 2 - 4, 14, 14);
+
+  // Beak
+  ctx.fillStyle = '#DAA520';
+  ctx.beginPath();
+  ctx.moveTo(PELICAN_W / 2 + 2, -PELICAN_H / 2);
+  ctx.lineTo(PELICAN_W / 2 + 16, -PELICAN_H / 2 + 5);
+  ctx.lineTo(PELICAN_W / 2 + 2, -PELICAN_H / 2 + 10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Eye
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(PELICAN_W / 2 - 4, -PELICAN_H / 2 + 2, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wing
+  ctx.fillStyle = '#6B4F1D';
+  ctx.fillRect(-PELICAN_W / 2 + 4, -4, PELICAN_W / 2, PELICAN_H / 2 - 2);
+
+  ctx.restore();
+}
+
+function drawScore() {
+  ctx.fillStyle = '#FFF';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 3;
+  ctx.font = 'bold 48px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.strokeText(score, W / 2, 60);
+  ctx.fillText(score, W / 2, 60);
+}
+
+function drawMenu() {
+  drawBackground();
+  drawGround();
+
+  // Title
+  ctx.fillStyle = '#FFF';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 3;
+  ctx.font = 'bold 42px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.strokeText('Flappy Pelican', W / 2, H / 3);
+  ctx.fillText('Flappy Pelican', W / 2, H / 3);
+
+  // Pelican preview (bobbing)
+  const bobY = H / 2 - 30 + Math.sin(performance.now() / 300) * 10;
+  ctx.save();
+  pelican.y = bobY;
+  pelican.rotation = 0;
+  drawPelican();
+  ctx.restore();
+
+  // Instruction
+  ctx.font = '20px Arial, sans-serif';
+  ctx.fillStyle = '#FFF';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  ctx.strokeText('Click or press Space to start', W / 2, H / 2 + 60);
+  ctx.fillText('Click or press Space to start', W / 2, H / 2 + 60);
+}
+
+function drawGameOver() {
+  // Dim overlay
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = 'center';
+
+  // Game Over text
+  ctx.fillStyle = '#FFF';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 3;
+  ctx.font = 'bold 42px Arial, sans-serif';
+  ctx.strokeText('Game Over', W / 2, H / 3);
+  ctx.fillText('Game Over', W / 2, H / 3);
+
+  // Score
+  ctx.font = 'bold 32px Arial, sans-serif';
+  ctx.strokeText('Score: ' + score, W / 2, H / 3 + 60);
+  ctx.fillText('Score: ' + score, W / 2, H / 3 + 60);
+
+  // Restart instruction
+  ctx.font = '20px Arial, sans-serif';
+  ctx.lineWidth = 2;
+  ctx.strokeText('Click to restart', W / 2, H / 3 + 120);
+  ctx.fillText('Click to restart', W / 2, H / 3 + 120);
+}
+
+// ── Main Loop ──────────────────────────────────────────────
+function gameLoop(now) {
+  update(now);
+
+  if (state === 'menu') {
+    drawMenu();
+  } else if (state === 'playing') {
+    drawBackground();
+    drawPipes();
+    drawGround();
+    drawPelican();
+    drawScore();
+  } else if (state === 'game_over') {
+    drawBackground();
+    drawPipes();
+    drawGround();
+    drawPelican();
+    drawScore();
+    drawGameOver();
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ── Start ──────────────────────────────────────────────────
+resetGame();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
+
