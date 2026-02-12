@@ -82,6 +82,8 @@ let groundOffset = 0;
 let parallaxOffset = 0;
 let pipeCount = 0;
 let simonTriggered = false;
+let shakeTimer = 0;
+let shakeIntensity = 0;
 
 function resetGame() {
   pelican.y = H / 2 - 50;
@@ -96,6 +98,8 @@ function resetGame() {
   groundOffset = 0;
   pipeCount = 0;
   simonTriggered = false;
+  shakeTimer = 0;
+  shakeIntensity = 0;
 }
 
 // ── Difficulty Button Hit-Test ────────────────────────────
@@ -235,6 +239,8 @@ function update(now) {
   // Collision
   if (checkCollision()) {
     state = 'game_over';
+    shakeTimer = 12;
+    shakeIntensity = 6;
     if (score > bestScore) {
       bestScore = score;
       setBestScore(currentDifficulty, bestScore);
@@ -1161,6 +1167,16 @@ function roundRect(x, y, w, h, r) {
 function gameLoop(now) {
   update(now);
 
+  let shaking = shakeTimer > 0;
+  if (shaking) {
+    ctx.save();
+    const sx = (Math.random() - 0.5) * shakeIntensity * 2;
+    const sy = (Math.random() - 0.5) * shakeIntensity * 2;
+    ctx.translate(sx, sy);
+    shakeTimer--;
+    shakeIntensity *= 0.85;
+  }
+
   if (state === 'menu') {
     drawMenu();
   } else if (state === 'playing') {
@@ -1176,6 +1192,10 @@ function gameLoop(now) {
     drawPelican();
     drawScore();
     drawGameOver();
+  }
+
+  if (shaking) {
+    ctx.restore();
   }
 
   requestAnimationFrame(gameLoop);
