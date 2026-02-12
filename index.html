@@ -80,6 +80,8 @@ let lastPipeSpawn = 0;
 let lastTime = 0;
 let groundOffset = 0;
 let parallaxOffset = 0;
+let pipeCount = 0;
+let simonTriggered = false;
 
 function resetGame() {
   pelican.y = H / 2 - 50;
@@ -92,6 +94,8 @@ function resetGame() {
   lastPipeSpawn = 0;
   lastTime = 0;
   groundOffset = 0;
+  pipeCount = 0;
+  simonTriggered = false;
 }
 
 // ── Difficulty Button Hit-Test ────────────────────────────
@@ -150,11 +154,16 @@ function spawnPipe() {
   const minTop = 80;
   const maxTop = H - GROUND_HEIGHT - PIPE_GAP - 80;
   const topHeight = minTop + Math.random() * (maxTop - minTop);
+  pipeCount++;
+  const hasSimon = (!simonTriggered && pipeCount === 11);
+  if (hasSimon) simonTriggered = true;
   pipes.push({
     x: W + 10,
     topH: topHeight,
     bottomY: topHeight + PIPE_GAP,
-    scored: false
+    scored: false,
+    hasSimon: hasSimon,
+    simonFrame: 0
   });
 }
 
