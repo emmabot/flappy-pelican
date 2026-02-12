@@ -84,6 +84,7 @@ let pipeCount = 0;
 let simonTriggered = false;
 let shakeTimer = 0;
 let shakeIntensity = 0;
+let menuIdleStart = performance.now();
 
 function resetGame() {
   pelican.y = H / 2 - 50;
@@ -113,6 +114,7 @@ function selectDifficulty(key) {
 
 // ── Input ──────────────────────────────────────────────────
 function handleInput() {
+  menuIdleStart = performance.now();
   if (state === 'menu') {
     state = 'playing';
     resetGame();
@@ -128,6 +130,7 @@ function handleInput() {
 
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  menuIdleStart = performance.now();
   if (state === 'menu' && difficultyButtons.length > 0) {
     // Convert pointer coords to canvas coords
     const rect = canvas.getBoundingClientRect();
@@ -145,6 +148,7 @@ canvas.addEventListener('pointerdown', (e) => {
   handleInput();
 });
 document.addEventListener('keydown', (e) => {
+  menuIdleStart = performance.now();
   if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); handleInput(); }
   if (state === 'menu') {
     if (e.key === '1') selectDifficulty('easy');
@@ -1001,6 +1005,42 @@ function drawMenu() {
   pelican.flapTimer = 0;
   pelican.wingPhase = performance.now() * 0.003;
   drawPelican();
+
+  // ── Idle sleep animation ────────────────────────────────
+  const idleSeconds = (performance.now() - menuIdleStart) / 1000;
+  if (idleSeconds > 15) {
+    // Closed eyes — draw over pelican's eye area
+    const eyeX = PELICAN_X + PELICAN_W / 2 + 12;
+    const eyeY = bobY - 4;
+    ctx.save();
+    ctx.strokeStyle = '#2a1a00';
+    ctx.lineWidth = 2;
+    // Draw a small downward arc for closed eye
+    ctx.beginPath();
+    ctx.arc(eyeX, eyeY, 3, 0, Math.PI);
+    ctx.stroke();
+    ctx.restore();
+
+    // Floating "z" letters
+    const t = performance.now() / 1000;
+    const zChars = ['z', 'z', 'Z'];
+    const zSizes = [10, 13, 16];
+    for (let i = 0; i < 3; i++) {
+      const phase = t * 0.8 + i * 1.2;
+      const floatY = eyeY - 15 - (i * 18) - ((phase % 3) * 8);
+      const floatX = eyeX + 8 + Math.sin(phase * 1.5) * 5 + i * 4;
+      const alpha = Math.max(0, 1 - (phase % 3) / 2.5);
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.8;
+      ctx.font = `bold ${zSizes[i]}px "Georgia", serif`;
+      ctx.fillStyle = '#fde8c8';
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 1;
+      ctx.strokeText(zChars[i], floatX, floatY);
+      ctx.fillText(zChars[i], floatX, floatY);
+      ctx.restore();
+    }
+  }
 
   // ── Difficulty Selector ──────────────────────────────────
   const btnW = 120, btnH = 42, btnGap = 12;
