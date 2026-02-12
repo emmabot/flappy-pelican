@@ -84,6 +84,7 @@ let pipeCount = 0;
 let simonTriggered = false;
 let shakeTimer = 0;
 let shakeIntensity = 0;
+let scorePopups = [];
 let menuIdleStart = performance.now();
 
 function resetGame() {
@@ -101,6 +102,7 @@ function resetGame() {
   simonTriggered = false;
   shakeTimer = 0;
   shakeIntensity = 0;
+  scorePopups = [];
 }
 
 // ── Difficulty Button Hit-Test ────────────────────────────
@@ -173,6 +175,17 @@ function spawnPipe() {
     hasSimon: hasSimon,
     simonFrame: 0
   });
+
+  // ~30% chance of fish in the gap
+  if (Math.random() < 0.3) {
+    const lastPipe = pipes[pipes.length - 1];
+    const fishTypes = ['anchovy', 'sardine', 'smelt'];
+    lastPipe.fish = {
+      collected: false,
+      y: lastPipe.topH + PIPE_GAP * (0.3 + Math.random() * 0.4),
+      type: fishTypes[Math.floor(Math.random() * 3)]
+    };
+  }
 }
 
 // ── Collision Detection ────────────────────────────────────
@@ -234,10 +247,30 @@ function update(now) {
       score++;
     }
 
+    // Fish collection
+    if (pipes[i].fish && !pipes[i].fish.collected) {
+      const fx = pipes[i].x + PIPE_WIDTH / 2;
+      const fy = pipes[i].fish.y;
+      const px = PELICAN_X + PELICAN_W / 2;
+      const py = pelican.y + PELICAN_H / 2;
+      if (Math.abs(px - fx) < 25 && Math.abs(py - fy) < 20) {
+        pipes[i].fish.collected = true;
+        score += 3;
+        scorePopups.push({ x: fx, y: fy, alpha: 1.0, vy: -1.5 });
+      }
+    }
+
     // Remove off-screen pipes
     if (pipes[i].x + PIPE_WIDTH < -10) {
       pipes.splice(i, 1);
     }
+  }
+
+  // Update score popups
+  for (let i = scorePopups.length - 1; i >= 0; i--) {
+    scorePopups[i].y += scorePopups[i].vy;
+    scorePopups[i].alpha -= 0.02;
+    if (scorePopups[i].alpha <= 0) scorePopups.splice(i, 1);
   }
 
   // Collision
@@ -593,6 +626,70 @@ function drawSimon(pipe) {
   ctx.restore();
 }
 
+function drawFish(pipe) {
+  const fx = pipe.x + PIPE_WIDTH / 2;
+  const baseY = pipe.fish.y;
+  const osc = Math.sin(performance.now() / 200 + pipe.x) * 3;
+  const fy = baseY + osc;
+  const type = pipe.fish.type;
+
+  ctx.save();
+  ctx.translate(fx, fy);
+
+  let bodyW, bodyH, bodyColor1, bodyColor2;
+  if (type === 'anchovy') {
+    bodyW = 12; bodyH = 5;
+    bodyColor1 = '#c0c0c0'; bodyColor2 = '#808080';
+  } else if (type === 'sardine') {
+    bodyW = 16; bodyH = 6;
+    bodyColor1 = '#a0b8d0'; bodyColor2 = '#6080a0';
+  } else { // smelt
+    bodyW = 14; bodyH = 5;
+    bodyColor1 = '#b0c8a8'; bodyColor2 = '#80a078';
+  }
+
+  // Body (oval with gradient) — fish faces LEFT
+  const grad = ctx.createLinearGradient(0, -bodyH, 0, bodyH);
+  grad.addColorStop(0, bodyColor1);
+  grad.addColorStop(1, bodyColor2);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, bodyW / 2, bodyH / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Tail fin (triangle on the RIGHT since fish faces left)
+  ctx.fillStyle = bodyColor2;
+  ctx.beginPath();
+  ctx.moveTo(bodyW / 2 - 1, 0);
+  ctx.lineTo(bodyW / 2 + 4, -3);
+  ctx.lineTo(bodyW / 2 + 4, 3);
+  ctx.closePath();
+  ctx.fill();
+
+  // Eye (dot on the LEFT side since fish faces left)
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(-bodyW / 4, -1, 1, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawScorePopups() {
+  for (const p of scorePopups) {
+    ctx.save();
+    ctx.globalAlpha = p.alpha;
+    ctx.font = 'bold 22px "Georgia", serif';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#2a1a00';
+    ctx.lineWidth = 3;
+    ctx.strokeText('+3', p.x, p.y);
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText('+3', p.x, p.y);
+    ctx.restore();
+  }
+}
+
 function drawPipes() {
   for (const pipe of pipes) {
     // ── Top piling (hangs from top) ──
@@ -643,6 +740,11 @@ function drawPipes() {
     for (let ax = pipe.x + 2; ax < pipe.x + PIPE_WIDTH - 2; ax += 5) {
       const ah = 4 + Math.sin(ax * 0.3) * 3;
       ctx.fillRect(ax, algaeY - ah, 3, ah + 8);
+    }
+
+    // Fish collectible in the gap
+    if (pipe.fish && !pipe.fish.collected) {
+      drawFish(pipe);
     }
 
     // Simon Willison easter egg
@@ -1225,12 +1327,14 @@ function gameLoop(now) {
     drawWater();
     drawPelican();
     drawScore();
+    drawScorePopups();
   } else if (state === 'game_over') {
     drawBackground();
     drawPipes();
     drawWater();
     drawPelican();
     drawScore();
+    drawScorePopups();
     drawGameOver();
   }
 
