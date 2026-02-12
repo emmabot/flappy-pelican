@@ -144,17 +144,25 @@ function handleInput() {
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   menuIdleStart = performance.now();
-  if (state === 'menu' && difficultyButtons.length > 0) {
+  if (state === 'menu') {
     // Convert pointer coords to canvas coords
     const rect = canvas.getBoundingClientRect();
     const scaleX = W / rect.width;
     const scaleY = H / rect.height;
     const cx = (e.clientX - rect.left) * scaleX;
     const cy = (e.clientY - rect.top) * scaleY;
+    // Check difficulty buttons
     for (const btn of difficultyButtons) {
       if (cx >= btn.x && cx <= btn.x + btn.w && cy >= btn.y && cy <= btn.y + btn.h) {
         selectDifficulty(btn.key);
-        return; // don't start the game, just select difficulty
+        return;
+      }
+    }
+    // Check habitat buttons
+    for (const btn of habitatButtons) {
+      if (cx >= btn.x && cx <= btn.x + btn.w && cy >= btn.y && cy <= btn.y + btn.h) {
+        selectHabitat(btn.key);
+        return;
       }
     }
   }
@@ -167,6 +175,9 @@ document.addEventListener('keydown', (e) => {
     if (e.key === '1') selectDifficulty('easy');
     if (e.key === '2') selectDifficulty('medium');
     if (e.key === '3') selectDifficulty('hard');
+    // Habitat shortcuts: Q W E R T
+    const habShortcuts = { q: 'halfmoonbay', w: 'channelislands', e: 'lajolla', r: 'morrobay', t: 'bolsachica' };
+    if (habShortcuts[e.key.toLowerCase()]) selectHabitat(habShortcuts[e.key.toLowerCase()]);
   }
 });
 
@@ -471,6 +482,549 @@ function drawPilingTexture(x, y, w, h) {
   }
 }
 
+// ── Habitat Definitions ────────────────────────────────────
+const HABITATS = {
+  halfmoonbay: {
+    key: 'halfmoonbay', name: 'Half Moon Bay', shortName: 'HMB', emoji: '🌅',
+    description: 'Sunset over the Pacific — warm golds and deep purples',
+    drawBackground() { drawBackground(); },
+    drawWater() { drawWater(); },
+    drawPipeStyle(pipe) {
+      // Top piling
+      const topGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+      topGrad.addColorStop(0, '#5c3a1e'); topGrad.addColorStop(0.3, '#8B6914');
+      topGrad.addColorStop(0.6, '#7a5a2e'); topGrad.addColorStop(1, '#4a2a10');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      const capGrad = ctx.createLinearGradient(pipe.x - 4, 0, pipe.x + PIPE_WIDTH + 4, 0);
+      capGrad.addColorStop(0, '#6b4420'); capGrad.addColorStop(0.5, '#9a7040'); capGrad.addColorStop(1, '#5a3418');
+      ctx.fillStyle = capGrad;
+      ctx.fillRect(pipe.x - 4, pipe.topH - 20, PIPE_WIDTH + 8, 20);
+      ctx.strokeStyle = '#3a1a08'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      ctx.strokeRect(pipe.x - 4, pipe.topH - 20, PIPE_WIDTH + 8, 20);
+      drawPilingTexture(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      // Bottom piling
+      const bH = H - GROUND_HEIGHT - pipe.bottomY;
+      const botGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+      botGrad.addColorStop(0, '#5c3a1e'); botGrad.addColorStop(0.3, '#8B6914');
+      botGrad.addColorStop(0.6, '#7a5a2e'); botGrad.addColorStop(1, '#4a2a10');
+      ctx.fillStyle = botGrad;
+      ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.fillStyle = capGrad;
+      ctx.fillRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 20);
+      ctx.strokeStyle = '#3a1a08'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.strokeRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 20);
+      drawPilingTexture(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      // Green algae at waterline
+      ctx.fillStyle = 'rgba(50, 120, 50, 0.4)';
+      const algaeY = H - GROUND_HEIGHT - 8;
+      for (let ax = pipe.x + 2; ax < pipe.x + PIPE_WIDTH - 2; ax += 5) {
+        const ah = 4 + Math.sin(ax * 0.3) * 3;
+        ctx.fillRect(ax, algaeY - ah, 3, ah + 8);
+      }
+    }
+  },
+
+  channelislands: {
+    key: 'channelislands', name: 'Channel Islands', shortName: 'Islands', emoji: '🏝️',
+    description: 'Midday sun over turquoise waters and rocky sea stacks',
+    drawBackground() {
+      // Bright midday blue sky
+      const grad = ctx.createLinearGradient(0, 0, 0, H - GROUND_HEIGHT);
+      grad.addColorStop(0, '#1a6fc4');
+      grad.addColorStop(0.4, '#4da6e8');
+      grad.addColorStop(0.7, '#7ec8f0');
+      grad.addColorStop(1, '#b0e0f8');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      // Bright sun high in sky
+      const sunY = (H - GROUND_HEIGHT) * 0.18;
+      const sunGrad = ctx.createRadialGradient(W * 0.5, sunY, 8, W * 0.5, sunY, 100);
+      sunGrad.addColorStop(0, 'rgba(255, 255, 220, 0.9)');
+      sunGrad.addColorStop(0.3, 'rgba(255, 240, 180, 0.3)');
+      sunGrad.addColorStop(1, 'rgba(135, 206, 235, 0)');
+      ctx.fillStyle = sunGrad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      ctx.fillStyle = '#fff8d0';
+      ctx.beginPath(); ctx.arc(W * 0.5, sunY, 22, 0, Math.PI * 2); ctx.fill();
+      // White puffy clouds
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      const cs = parallaxOffset * 0.12;
+      for (let i = 0; i < 3; i++) {
+        const cx = ((i * 180 + 60 - cs) % (W + 140)) - 70;
+        drawCloud(cx, 50 + i * 30, 55 + i * 8, 0.5);
+      }
+      // Distant island silhouettes
+      const hillSpeed = parallaxOffset * 0.2;
+      ctx.fillStyle = '#5a7a6a';
+      ctx.beginPath(); ctx.moveTo(0, H - GROUND_HEIGHT);
+      for (let x = 0; x <= W; x += 2) {
+        const h = Math.sin((x + hillSpeed) * 0.006) * 35 + Math.sin((x + hillSpeed) * 0.018) * 18 + 45;
+        ctx.lineTo(x, H - GROUND_HEIGHT - h);
+      }
+      ctx.lineTo(W, H - GROUND_HEIGHT); ctx.closePath(); ctx.fill();
+      // Rocky sea stacks (sandstone colored)
+      const stackSpeed = parallaxOffset * 0.35;
+      ctx.fillStyle = '#c4a060';
+      for (let i = 0; i < 3; i++) {
+        const sx = ((i * 200 + 100 - stackSpeed) % (W + 120)) - 60;
+        const sh = 30 + i * 15;
+        ctx.beginPath();
+        ctx.moveTo(sx - 12, H - GROUND_HEIGHT);
+        ctx.lineTo(sx - 8, H - GROUND_HEIGHT - sh);
+        ctx.quadraticCurveTo(sx, H - GROUND_HEIGHT - sh - 8, sx + 8, H - GROUND_HEIGHT - sh);
+        ctx.lineTo(sx + 12, H - GROUND_HEIGHT);
+        ctx.closePath(); ctx.fill();
+        // Guano stains (white streaks)
+        ctx.fillStyle = 'rgba(255, 255, 240, 0.5)';
+        ctx.fillRect(sx - 3, H - GROUND_HEIGHT - sh + 2, 6, sh * 0.4);
+        ctx.fillStyle = '#c4a060';
+      }
+    },
+    drawWater() {
+      const waterY = H - GROUND_HEIGHT;
+      const wGrad = ctx.createLinearGradient(0, waterY, 0, H);
+      wGrad.addColorStop(0, '#20a0b0');
+      wGrad.addColorStop(0.4, '#1a8898');
+      wGrad.addColorStop(1, '#0e5a68');
+      ctx.fillStyle = wGrad;
+      ctx.fillRect(0, waterY, W, GROUND_HEIGHT);
+      // Turquoise shimmer
+      const t = performance.now() * 0.002;
+      ctx.strokeStyle = 'rgba(150, 240, 255, 0.3)';
+      ctx.lineWidth = 1.5;
+      for (let row = 0; row < 3; row++) {
+        ctx.beginPath();
+        const wy = waterY + 8 + row * 18;
+        for (let x = 0; x <= W; x += 3) {
+          const wave = Math.sin((x - groundOffset * 3 + row * 40) * 0.04 + t + row) * 3;
+          if (x === 0) ctx.moveTo(x, wy + wave); else ctx.lineTo(x, wy + wave);
+        }
+        ctx.stroke();
+      }
+    },
+    drawPipeStyle(pipe) {
+      // Sandstone sea stack obstacles
+      const topGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+      topGrad.addColorStop(0, '#a08040'); topGrad.addColorStop(0.4, '#c4a060');
+      topGrad.addColorStop(0.7, '#b89050'); topGrad.addColorStop(1, '#8a6830');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      // Rough cap
+      ctx.fillStyle = '#b89050';
+      ctx.fillRect(pipe.x - 4, pipe.topH - 18, PIPE_WIDTH + 8, 18);
+      ctx.strokeStyle = '#6a4820'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      ctx.strokeRect(pipe.x - 4, pipe.topH - 18, PIPE_WIDTH + 8, 18);
+      // Rock texture lines
+      ctx.strokeStyle = 'rgba(100, 70, 30, 0.25)'; ctx.lineWidth = 1;
+      for (let gy = 10; gy < pipe.topH - 20; gy += 14) {
+        ctx.beginPath();
+        ctx.moveTo(pipe.x + 3, gy + Math.sin(gy * 0.2) * 2);
+        ctx.lineTo(pipe.x + PIPE_WIDTH - 3, gy + Math.sin(gy * 0.15) * 3);
+        ctx.stroke();
+      }
+      // Guano stains on top
+      ctx.fillStyle = 'rgba(255, 255, 240, 0.35)';
+      ctx.fillRect(pipe.x + 8, pipe.topH - 30, 12, 20);
+      ctx.fillRect(pipe.x + 30, pipe.topH - 25, 10, 15);
+      // Bottom
+      const bH = H - GROUND_HEIGHT - pipe.bottomY;
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.fillStyle = '#b89050';
+      ctx.fillRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 18);
+      ctx.strokeStyle = '#6a4820'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.strokeRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 18);
+      for (let gy = pipe.bottomY + 22; gy < H - GROUND_HEIGHT; gy += 14) {
+        ctx.strokeStyle = 'rgba(100, 70, 30, 0.25)'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pipe.x + 3, gy + Math.sin(gy * 0.2) * 2);
+        ctx.lineTo(pipe.x + PIPE_WIDTH - 3, gy + Math.sin(gy * 0.15) * 3);
+        ctx.stroke();
+      }
+    }
+  },
+
+  lajolla: {
+    key: 'lajolla', name: 'La Jolla Cove', shortName: 'La Jolla', emoji: '🌊',
+    description: 'Morning light over clear blue-green water with kelp forests',
+    drawBackground() {
+      // Morning blue sky
+      const grad = ctx.createLinearGradient(0, 0, 0, H - GROUND_HEIGHT);
+      grad.addColorStop(0, '#2a5ca8');
+      grad.addColorStop(0.3, '#5a9ad8');
+      grad.addColorStop(0.6, '#8ac4e8');
+      grad.addColorStop(1, '#c8e8f8');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      // Morning sun (low, east side)
+      const sunY = (H - GROUND_HEIGHT) * 0.35;
+      const sunGrad = ctx.createRadialGradient(W * 0.85, sunY, 8, W * 0.85, sunY, 90);
+      sunGrad.addColorStop(0, 'rgba(255, 240, 200, 0.7)');
+      sunGrad.addColorStop(0.4, 'rgba(255, 220, 160, 0.2)');
+      sunGrad.addColorStop(1, 'rgba(135, 200, 235, 0)');
+      ctx.fillStyle = sunGrad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      // Wispy clouds
+      const cs = parallaxOffset * 0.1;
+      for (let i = 0; i < 3; i++) {
+        const cx = ((i * 190 + 30 - cs) % (W + 140)) - 70;
+        drawCloud(cx, 40 + i * 35, 45 + i * 10, 0.35);
+      }
+      // Coastal cliffs
+      const hillSpeed = parallaxOffset * 0.25;
+      ctx.fillStyle = '#8a7a60';
+      ctx.beginPath(); ctx.moveTo(0, H - GROUND_HEIGHT);
+      for (let x = 0; x <= W; x += 2) {
+        const h = Math.sin((x + hillSpeed) * 0.007) * 30 + Math.sin((x + hillSpeed) * 0.022) * 15 + 40;
+        ctx.lineTo(x, H - GROUND_HEIGHT - h);
+      }
+      ctx.lineTo(W, H - GROUND_HEIGHT); ctx.closePath(); ctx.fill();
+      // Green vegetation on cliffs
+      ctx.fillStyle = '#4a7a3a';
+      ctx.beginPath(); ctx.moveTo(0, H - GROUND_HEIGHT);
+      for (let x = 0; x <= W; x += 2) {
+        const h = Math.sin((x + hillSpeed) * 0.007) * 28 + Math.sin((x + hillSpeed) * 0.022) * 12 + 32;
+        ctx.lineTo(x, H - GROUND_HEIGHT - h);
+      }
+      ctx.lineTo(W, H - GROUND_HEIGHT); ctx.closePath(); ctx.fill();
+    },
+    drawWater() {
+      const waterY = H - GROUND_HEIGHT;
+      const wGrad = ctx.createLinearGradient(0, waterY, 0, H);
+      wGrad.addColorStop(0, '#2a8a7a');
+      wGrad.addColorStop(0.3, '#1a6a60');
+      wGrad.addColorStop(1, '#0a4a40');
+      ctx.fillStyle = wGrad;
+      ctx.fillRect(0, waterY, W, GROUND_HEIGHT);
+      // Kelp fronds floating on surface
+      const t = performance.now() * 0.002;
+      ctx.fillStyle = 'rgba(60, 100, 40, 0.4)';
+      for (let i = 0; i < 8; i++) {
+        const kx = ((i * 67 + parallaxOffset * 0.4) % W);
+        const ky = waterY + 3 + Math.sin(t + i) * 2;
+        ctx.beginPath();
+        ctx.ellipse(kx, ky, 8 + (i % 3) * 3, 2, Math.sin(t + i * 0.5) * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Waves
+      ctx.strokeStyle = 'rgba(100, 200, 200, 0.3)';
+      ctx.lineWidth = 1.5;
+      for (let row = 0; row < 3; row++) {
+        ctx.beginPath();
+        const wy = waterY + 8 + row * 18;
+        for (let x = 0; x <= W; x += 3) {
+          const wave = Math.sin((x - groundOffset * 3 + row * 40) * 0.04 + t + row) * 3;
+          if (x === 0) ctx.moveTo(x, wy + wave); else ctx.lineTo(x, wy + wave);
+        }
+        ctx.stroke();
+      }
+    },
+    drawPipeStyle(pipe) {
+      // Kelp stalk obstacles — dark green-brown
+      const topGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+      topGrad.addColorStop(0, '#3a5a30'); topGrad.addColorStop(0.4, '#4a7040');
+      topGrad.addColorStop(0.7, '#3a6035'); topGrad.addColorStop(1, '#2a4a20');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      // Kelp bulb cap
+      ctx.fillStyle = '#5a8a40';
+      ctx.beginPath();
+      ctx.ellipse(pipe.x + PIPE_WIDTH / 2, pipe.topH - 6, PIPE_WIDTH / 2 + 4, 12, 0, 0, Math.PI);
+      ctx.fill();
+      ctx.strokeStyle = '#2a4a18'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      // Kelp texture — wavy vertical lines
+      ctx.strokeStyle = 'rgba(30, 60, 20, 0.3)'; ctx.lineWidth = 1;
+      for (let gx = pipe.x + 8; gx < pipe.x + PIPE_WIDTH - 6; gx += 10) {
+        ctx.beginPath();
+        for (let gy = 0; gy < pipe.topH; gy += 6) {
+          const wx = gx + Math.sin(gy * 0.08 + gx * 0.1) * 3;
+          if (gy === 0) ctx.moveTo(wx, gy); else ctx.lineTo(wx, gy);
+        }
+        ctx.stroke();
+      }
+      // Small leaf blades on sides
+      ctx.fillStyle = 'rgba(80, 130, 50, 0.5)';
+      for (let i = 0; i < 4; i++) {
+        const ly = pipe.topH * (0.2 + i * 0.2);
+        const side = i % 2 === 0 ? -1 : 1;
+        const lx = side > 0 ? pipe.x + PIPE_WIDTH : pipe.x;
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.quadraticCurveTo(lx + side * 12, ly - 4, lx + side * 8, ly + 6);
+        ctx.quadraticCurveTo(lx + side * 4, ly + 3, lx, ly);
+        ctx.fill();
+      }
+      // Bottom kelp stalk
+      const bH = H - GROUND_HEIGHT - pipe.bottomY;
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.fillStyle = '#5a8a40';
+      ctx.beginPath();
+      ctx.ellipse(pipe.x + PIPE_WIDTH / 2, pipe.bottomY + 6, PIPE_WIDTH / 2 + 4, 12, 0, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#2a4a18'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      for (let gx = pipe.x + 8; gx < pipe.x + PIPE_WIDTH - 6; gx += 10) {
+        ctx.strokeStyle = 'rgba(30, 60, 20, 0.3)'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let gy = pipe.bottomY; gy < H - GROUND_HEIGHT; gy += 6) {
+          const wx = gx + Math.sin(gy * 0.08 + gx * 0.1) * 3;
+          if (gy === pipe.bottomY) ctx.moveTo(wx, gy); else ctx.lineTo(wx, gy);
+        }
+        ctx.stroke();
+      }
+    }
+  },
+
+  morrobay: {
+    key: 'morrobay', name: 'Morro Bay', shortName: 'Morro', emoji: '🌁',
+    description: 'Foggy harbor with Morro Rock silhouette and dock pilings',
+    drawBackground() {
+      // Foggy gray sky
+      const grad = ctx.createLinearGradient(0, 0, 0, H - GROUND_HEIGHT);
+      grad.addColorStop(0, '#8a9aaa');
+      grad.addColorStop(0.3, '#a0b0b8');
+      grad.addColorStop(0.6, '#b8c4c8');
+      grad.addColorStop(1, '#c8d0d4');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      // Diffused sun behind fog
+      const sunY = (H - GROUND_HEIGHT) * 0.3;
+      const sunGrad = ctx.createRadialGradient(W * 0.6, sunY, 15, W * 0.6, sunY, 100);
+      sunGrad.addColorStop(0, 'rgba(220, 220, 210, 0.5)');
+      sunGrad.addColorStop(0.5, 'rgba(200, 210, 215, 0.2)');
+      sunGrad.addColorStop(1, 'rgba(180, 195, 200, 0)');
+      ctx.fillStyle = sunGrad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      // Morro Rock silhouette (large, iconic)
+      const rockSpeed = parallaxOffset * 0.15;
+      const rockX = ((W * 0.35 - rockSpeed) % (W + 300)) - 100;
+      ctx.fillStyle = '#5a6068';
+      ctx.beginPath();
+      ctx.moveTo(rockX - 60, H - GROUND_HEIGHT);
+      ctx.quadraticCurveTo(rockX - 40, H - GROUND_HEIGHT - 80, rockX, H - GROUND_HEIGHT - 110);
+      ctx.quadraticCurveTo(rockX + 40, H - GROUND_HEIGHT - 80, rockX + 60, H - GROUND_HEIGHT);
+      ctx.closePath(); ctx.fill();
+      // Fog wisps
+      ctx.fillStyle = 'rgba(200, 210, 215, 0.3)';
+      const fogSpeed = parallaxOffset * 0.08;
+      for (let i = 0; i < 4; i++) {
+        const fx = ((i * 150 + 30 - fogSpeed) % (W + 200)) - 100;
+        const fy = (H - GROUND_HEIGHT) * (0.4 + i * 0.12);
+        ctx.beginPath();
+        ctx.ellipse(fx, fy, 80 + i * 20, 8 + i * 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Distant harbor buildings
+      const hillSpeed = parallaxOffset * 0.2;
+      ctx.fillStyle = '#6a7078';
+      ctx.beginPath(); ctx.moveTo(0, H - GROUND_HEIGHT);
+      for (let x = 0; x <= W; x += 2) {
+        const h = Math.sin((x + hillSpeed) * 0.01) * 20 + Math.sin((x + hillSpeed) * 0.025) * 10 + 25;
+        ctx.lineTo(x, H - GROUND_HEIGHT - h);
+      }
+      ctx.lineTo(W, H - GROUND_HEIGHT); ctx.closePath(); ctx.fill();
+    },
+    drawWater() {
+      const waterY = H - GROUND_HEIGHT;
+      const wGrad = ctx.createLinearGradient(0, waterY, 0, H);
+      wGrad.addColorStop(0, '#5a7080');
+      wGrad.addColorStop(0.3, '#4a6070');
+      wGrad.addColorStop(1, '#3a4a58');
+      ctx.fillStyle = wGrad;
+      ctx.fillRect(0, waterY, W, GROUND_HEIGHT);
+      // Calm harbor waves (subtle)
+      const t = performance.now() * 0.002;
+      ctx.strokeStyle = 'rgba(140, 170, 190, 0.2)';
+      ctx.lineWidth = 1;
+      for (let row = 0; row < 3; row++) {
+        ctx.beginPath();
+        const wy = waterY + 10 + row * 16;
+        for (let x = 0; x <= W; x += 4) {
+          const wave = Math.sin((x - groundOffset * 2 + row * 50) * 0.03 + t + row) * 2;
+          if (x === 0) ctx.moveTo(x, wy + wave); else ctx.lineTo(x, wy + wave);
+        }
+        ctx.stroke();
+      }
+    },
+    drawPipeStyle(pipe) {
+      // Gray dock pilings with rope
+      const topGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+      topGrad.addColorStop(0, '#5a5a5a'); topGrad.addColorStop(0.3, '#787878');
+      topGrad.addColorStop(0.6, '#6a6a6a'); topGrad.addColorStop(1, '#4a4a4a');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      // Metal cap/band
+      ctx.fillStyle = '#606868';
+      ctx.fillRect(pipe.x - 3, pipe.topH - 16, PIPE_WIDTH + 6, 16);
+      ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      ctx.strokeRect(pipe.x - 3, pipe.topH - 16, PIPE_WIDTH + 6, 16);
+      // Rope wrapped around piling
+      ctx.strokeStyle = '#a09070'; ctx.lineWidth = 2;
+      for (let ry = 20; ry < pipe.topH - 20; ry += 28) {
+        ctx.beginPath();
+        ctx.moveTo(pipe.x, ry);
+        ctx.quadraticCurveTo(pipe.x + PIPE_WIDTH / 2, ry - 6, pipe.x + PIPE_WIDTH, ry);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(pipe.x, ry + 8);
+        ctx.quadraticCurveTo(pipe.x + PIPE_WIDTH / 2, ry + 14, pipe.x + PIPE_WIDTH, ry + 8);
+        ctx.stroke();
+      }
+      // Bottom piling
+      const bH = H - GROUND_HEIGHT - pipe.bottomY;
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.fillStyle = '#606868';
+      ctx.fillRect(pipe.x - 3, pipe.bottomY, PIPE_WIDTH + 6, 16);
+      ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.strokeRect(pipe.x - 3, pipe.bottomY, PIPE_WIDTH + 6, 16);
+      // Rope on bottom
+      for (let ry = pipe.bottomY + 20; ry < H - GROUND_HEIGHT - 10; ry += 28) {
+        ctx.strokeStyle = '#a09070'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pipe.x, ry);
+        ctx.quadraticCurveTo(pipe.x + PIPE_WIDTH / 2, ry - 6, pipe.x + PIPE_WIDTH, ry);
+        ctx.stroke();
+      }
+    }
+  },
+
+  bolsachica: {
+    key: 'bolsachica', name: 'Bolsa Chica Wetlands', shortName: 'Bolsa', emoji: '🌿',
+    description: 'Golden afternoon over murky estuary with boardwalk pilings',
+    drawBackground() {
+      // Golden afternoon sky
+      const grad = ctx.createLinearGradient(0, 0, 0, H - GROUND_HEIGHT);
+      grad.addColorStop(0, '#4a6a90');
+      grad.addColorStop(0.3, '#8aa0b0');
+      grad.addColorStop(0.5, '#c8b888');
+      grad.addColorStop(0.75, '#d8c888');
+      grad.addColorStop(1, '#e8d8a0');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      // Warm sun
+      const sunY = (H - GROUND_HEIGHT) * 0.45;
+      const sunGrad = ctx.createRadialGradient(W * 0.65, sunY, 10, W * 0.65, sunY, 100);
+      sunGrad.addColorStop(0, 'rgba(255, 230, 140, 0.6)');
+      sunGrad.addColorStop(0.4, 'rgba(255, 210, 100, 0.2)');
+      sunGrad.addColorStop(1, 'rgba(200, 180, 120, 0)');
+      ctx.fillStyle = sunGrad;
+      ctx.fillRect(0, 0, W, H - GROUND_HEIGHT);
+      // Distant marsh/wetland vegetation
+      const hillSpeed = parallaxOffset * 0.2;
+      ctx.fillStyle = '#6a8a50';
+      ctx.beginPath(); ctx.moveTo(0, H - GROUND_HEIGHT);
+      for (let x = 0; x <= W; x += 2) {
+        const h = Math.sin((x + hillSpeed) * 0.01) * 15 + Math.sin((x + hillSpeed) * 0.03) * 8 + 20;
+        ctx.lineTo(x, H - GROUND_HEIGHT - h);
+      }
+      ctx.lineTo(W, H - GROUND_HEIGHT); ctx.closePath(); ctx.fill();
+      // Cattails in foreground
+      const cattailSpeed = parallaxOffset * 0.4;
+      ctx.strokeStyle = '#4a6030';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) {
+        const cx = ((i * 90 + 40 - cattailSpeed) % (W + 80)) - 40;
+        const ch = 35 + (i % 3) * 10;
+        const sway = Math.sin(performance.now() * 0.001 + i) * 3;
+        // Stem
+        ctx.beginPath();
+        ctx.moveTo(cx, H - GROUND_HEIGHT);
+        ctx.quadraticCurveTo(cx + sway, H - GROUND_HEIGHT - ch / 2, cx + sway * 1.5, H - GROUND_HEIGHT - ch);
+        ctx.stroke();
+        // Brown cattail head
+        ctx.fillStyle = '#6a4020';
+        ctx.beginPath();
+        ctx.ellipse(cx + sway * 1.5, H - GROUND_HEIGHT - ch - 5, 3, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4a6030'; ctx.lineWidth = 2;
+      }
+    },
+    drawWater() {
+      const waterY = H - GROUND_HEIGHT;
+      const wGrad = ctx.createLinearGradient(0, waterY, 0, H);
+      wGrad.addColorStop(0, '#5a7050');
+      wGrad.addColorStop(0.3, '#4a5a3a');
+      wGrad.addColorStop(1, '#3a4a2a');
+      ctx.fillStyle = wGrad;
+      ctx.fillRect(0, waterY, W, GROUND_HEIGHT);
+      // Murky estuary — subtle ripples
+      const t = performance.now() * 0.002;
+      ctx.strokeStyle = 'rgba(120, 140, 100, 0.25)';
+      ctx.lineWidth = 1;
+      for (let row = 0; row < 3; row++) {
+        ctx.beginPath();
+        const wy = waterY + 8 + row * 18;
+        for (let x = 0; x <= W; x += 4) {
+          const wave = Math.sin((x - groundOffset * 2 + row * 50) * 0.03 + t + row) * 2;
+          if (x === 0) ctx.moveTo(x, wy + wave); else ctx.lineTo(x, wy + wave);
+        }
+        ctx.stroke();
+      }
+    },
+    drawPipeStyle(pipe) {
+      // Boardwalk pilings — weathered wood with signs
+      const topGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
+      topGrad.addColorStop(0, '#7a6a50'); topGrad.addColorStop(0.3, '#9a8a68');
+      topGrad.addColorStop(0.6, '#8a7a58'); topGrad.addColorStop(1, '#6a5a40');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      // Boardwalk plank cap
+      ctx.fillStyle = '#8a7a58';
+      ctx.fillRect(pipe.x - 5, pipe.topH - 18, PIPE_WIDTH + 10, 18);
+      // Plank lines on cap
+      ctx.strokeStyle = 'rgba(80, 60, 30, 0.3)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pipe.x - 5, pipe.topH - 9);
+      ctx.lineTo(pipe.x + PIPE_WIDTH + 5, pipe.topH - 9);
+      ctx.stroke();
+      ctx.strokeStyle = '#5a4a30'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      ctx.strokeRect(pipe.x - 5, pipe.topH - 18, PIPE_WIDTH + 10, 18);
+      drawPilingTexture(pipe.x, 0, PIPE_WIDTH, pipe.topH);
+      // Small sign on some pilings
+      if (Math.floor(pipe.x) % 3 === 0) {
+        ctx.fillStyle = '#e8d8b0';
+        ctx.fillRect(pipe.x + 8, pipe.topH - 50, PIPE_WIDTH - 16, 22);
+        ctx.strokeStyle = '#6a5a30'; ctx.lineWidth = 1;
+        ctx.strokeRect(pipe.x + 8, pipe.topH - 50, PIPE_WIDTH - 16, 22);
+        ctx.fillStyle = '#4a3a20';
+        ctx.font = 'bold 7px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('WILDLIFE', pipe.x + PIPE_WIDTH / 2, pipe.topH - 38);
+        ctx.fillText('RESERVE', pipe.x + PIPE_WIDTH / 2, pipe.topH - 31);
+      }
+      // Bottom piling
+      const bH = H - GROUND_HEIGHT - pipe.bottomY;
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.fillStyle = '#8a7a58';
+      ctx.fillRect(pipe.x - 5, pipe.bottomY, PIPE_WIDTH + 10, 18);
+      ctx.strokeStyle = 'rgba(80, 60, 30, 0.3)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pipe.x - 5, pipe.bottomY + 9);
+      ctx.lineTo(pipe.x + PIPE_WIDTH + 5, pipe.bottomY + 9);
+      ctx.stroke();
+      ctx.strokeStyle = '#5a4a30'; ctx.lineWidth = 2;
+      ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+      ctx.strokeRect(pipe.x - 5, pipe.bottomY, PIPE_WIDTH + 10, 18);
+      drawPilingTexture(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
+    }
+  }
+};
+
+// Validate habitat on load
+if (!HABITATS[currentHabitat]) currentHabitat = 'halfmoonbay';
+
 function drawSimon(pipe) {
   ctx.save();
   pipe.simonFrame++;
@@ -702,56 +1256,10 @@ function drawScorePopups() {
 }
 
 function drawPipes() {
+  const habitat = getHabitat();
   for (const pipe of pipes) {
-    // ── Top piling (hangs from top) ──
-    // Main wood body
-    const topGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
-    topGrad.addColorStop(0, '#5c3a1e');
-    topGrad.addColorStop(0.3, '#8B6914');
-    topGrad.addColorStop(0.6, '#7a5a2e');
-    topGrad.addColorStop(1, '#4a2a10');
-    ctx.fillStyle = topGrad;
-    ctx.fillRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
-    // Cap (wider crossbeam)
-    const capGrad = ctx.createLinearGradient(pipe.x - 4, 0, pipe.x + PIPE_WIDTH + 4, 0);
-    capGrad.addColorStop(0, '#6b4420');
-    capGrad.addColorStop(0.5, '#9a7040');
-    capGrad.addColorStop(1, '#5a3418');
-    ctx.fillStyle = capGrad;
-    ctx.fillRect(pipe.x - 4, pipe.topH - 20, PIPE_WIDTH + 8, 20);
-    // Border
-    ctx.strokeStyle = '#3a1a08';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(pipe.x, 0, PIPE_WIDTH, pipe.topH);
-    ctx.strokeRect(pipe.x - 4, pipe.topH - 20, PIPE_WIDTH + 8, 20);
-    drawPilingTexture(pipe.x, 0, PIPE_WIDTH, pipe.topH);
-
-    // ── Bottom piling (rises from water) ──
-    const bH = H - GROUND_HEIGHT - pipe.bottomY;
-    const botGrad = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_WIDTH, 0);
-    botGrad.addColorStop(0, '#5c3a1e');
-    botGrad.addColorStop(0.3, '#8B6914');
-    botGrad.addColorStop(0.6, '#7a5a2e');
-    botGrad.addColorStop(1, '#4a2a10');
-    ctx.fillStyle = botGrad;
-    ctx.fillRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
-    // Cap
-    ctx.fillStyle = capGrad;
-    ctx.fillRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 20);
-    // Border
-    ctx.strokeStyle = '#3a1a08';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
-    ctx.strokeRect(pipe.x - 4, pipe.bottomY, PIPE_WIDTH + 8, 20);
-    drawPilingTexture(pipe.x, pipe.bottomY, PIPE_WIDTH, bH);
-
-    // Green algae/seaweed at waterline on bottom piling
-    ctx.fillStyle = 'rgba(50, 120, 50, 0.4)';
-    const algaeY = H - GROUND_HEIGHT - 8;
-    for (let ax = pipe.x + 2; ax < pipe.x + PIPE_WIDTH - 2; ax += 5) {
-      const ah = 4 + Math.sin(ax * 0.3) * 3;
-      ctx.fillRect(ax, algaeY - ah, 3, ah + 8);
-    }
+    // Use habitat-specific pipe style (visual only — same hitbox)
+    habitat.drawPipeStyle(pipe);
 
     // Fish collectible in the gap
     if (pipe.fish && !pipe.fish.collected) {
@@ -1083,8 +1591,9 @@ function drawScore() {
 }
 
 function drawMenu() {
-  drawBackground();
-  drawWater();
+  const habitat = getHabitat();
+  habitat.drawBackground();
+  habitat.drawWater();
 
   ctx.textAlign = 'center';
 
@@ -1210,14 +1719,72 @@ function drawMenu() {
     ctx.fillText(label, bx + btnW / 2, btnY + btnH / 2 + 6);
   }
 
+  // ── Habitat Selector ──────────────────────────────────────
+  const habKeys = ['halfmoonbay', 'channelislands', 'lajolla', 'morrobay', 'bolsachica'];
+  const hBtnW = 82, hBtnH = 34, hBtnGap = 6;
+  const hTotalW = 5 * hBtnW + 4 * hBtnGap;
+  const hStartX = (W - hTotalW) / 2;
+  const hBtnY = btnY + btnH + 16;
+  habitatButtons = [];
+
+  for (let i = 0; i < 5; i++) {
+    const hk = habKeys[i];
+    const hab = HABITATS[hk];
+    const hbx = hStartX + i * (hBtnW + hBtnGap);
+    const isSel = (hk === currentHabitat);
+
+    habitatButtons.push({ key: hk, x: hbx, y: hBtnY, w: hBtnW, h: hBtnH });
+
+    ctx.fillStyle = isSel ? 'rgba(255, 215, 0, 0.25)' : 'rgba(30, 15, 5, 0.55)';
+    ctx.strokeStyle = isSel ? '#FFD700' : 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = isSel ? 2 : 1;
+    roundRect(hbx, hBtnY, hBtnW, hBtnH, 7);
+
+    if (isSel) {
+      ctx.save();
+      ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 8;
+      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(hbx + 7, hBtnY);
+      ctx.lineTo(hbx + hBtnW - 7, hBtnY);
+      ctx.quadraticCurveTo(hbx + hBtnW, hBtnY, hbx + hBtnW, hBtnY + 7);
+      ctx.lineTo(hbx + hBtnW, hBtnY + hBtnH - 7);
+      ctx.quadraticCurveTo(hbx + hBtnW, hBtnY + hBtnH, hbx + hBtnW - 7, hBtnY + hBtnH);
+      ctx.lineTo(hbx + 7, hBtnY + hBtnH);
+      ctx.quadraticCurveTo(hbx, hBtnY + hBtnH, hbx, hBtnY + hBtnH - 7);
+      ctx.lineTo(hbx, hBtnY + 7);
+      ctx.quadraticCurveTo(hbx, hBtnY, hbx + 7, hBtnY);
+      ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.font = isSel ? 'bold 11px "Georgia", serif' : '10px "Georgia", serif';
+    ctx.fillStyle = isSel ? '#FFD700' : '#fde8c8';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.lineWidth = 1;
+    const hLabel = hab.emoji + ' ' + hab.shortName;
+    ctx.strokeText(hLabel, hbx + hBtnW / 2, hBtnY + hBtnH / 2 + 4);
+    ctx.fillText(hLabel, hbx + hBtnW / 2, hBtnY + hBtnH / 2 + 4);
+  }
+
+  // Habitat description
+  const selHab = getHabitat();
+  ctx.font = 'italic 11px "Georgia", serif';
+  ctx.fillStyle = 'rgba(253, 232, 200, 0.7)';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.strokeText(selHab.description, W / 2, hBtnY + hBtnH + 16);
+  ctx.fillText(selHab.description, W / 2, hBtnY + hBtnH + 16);
+
   // Best score for selected difficulty
+  const infoY = hBtnY + hBtnH + 32;
   if (bestScore > 0) {
     ctx.font = '16px "Georgia", serif';
     ctx.fillStyle = '#fde8c8';
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.lineWidth = 1.5;
-    ctx.strokeText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, btnY + btnH + 28);
-    ctx.fillText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, btnY + btnH + 28);
+    ctx.strokeText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, infoY);
+    ctx.fillText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, infoY);
   }
 
   // Instruction with pulsing opacity
@@ -1227,8 +1794,9 @@ function drawMenu() {
   ctx.fillStyle = '#FFF';
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
   ctx.lineWidth = 2;
-  ctx.strokeText('Tap or press Space to play', W / 2, btnY + btnH + 60);
-  ctx.fillText('Tap or press Space to play', W / 2, btnY + btnH + 60);
+  const instrY = infoY + (bestScore > 0 ? 30 : 0);
+  ctx.strokeText('Tap or press Space to play', W / 2, instrY);
+  ctx.fillText('Tap or press Space to play', W / 2, instrY);
   ctx.globalAlpha = 1;
 }
 
@@ -1330,19 +1898,20 @@ function gameLoop(now) {
     shakeIntensity *= 0.85;
   }
 
+  const habitat = getHabitat();
   if (state === 'menu') {
     drawMenu();
   } else if (state === 'playing') {
-    drawBackground();
+    habitat.drawBackground();
     drawPipes();
-    drawWater();
+    habitat.drawWater();
     drawPelican();
     drawScore();
     drawScorePopups();
   } else if (state === 'game_over') {
-    drawBackground();
+    habitat.drawBackground();
     drawPipes();
-    drawWater();
+    habitat.drawWater();
     drawPelican();
     drawScore();
     drawScorePopups();
