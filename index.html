@@ -15,15 +15,35 @@
 <script>
 // ── Constants ──────────────────────────────────────────────
 const W = 480, H = 640;
-const GRAVITY = 0.35;
-const FLAP_STRENGTH = -7.0;
-const PIPE_SPEED = 2.0;
+let GRAVITY = 0.40;
+let FLAP_STRENGTH = -7.2;
+let PIPE_SPEED = 2.5;
 const PIPE_WIDTH = 60;
-const PIPE_GAP = 160;
-const PIPE_SPAWN_INTERVAL = 2000;
+let PIPE_GAP = 140;
+let PIPE_SPAWN_INTERVAL = 1600;
 const GROUND_HEIGHT = 60;
 const PELICAN_W = 40, PELICAN_H = 30;
 const PELICAN_X = 80;
+
+// ── Difficulty Presets ───────────────────────────────────────
+const DIFFICULTIES = {
+  easy:   { gravity: 0.30, flap: -6.5, speed: 1.8, gap: 175, interval: 2200, label: 'Easy', emoji: '🌊' },
+  medium: { gravity: 0.40, flap: -7.2, speed: 2.5, gap: 140, interval: 1600, label: 'Medium', emoji: '🏄' },
+  hard:   { gravity: 0.50, flap: -8.0, speed: 3.2, gap: 115, interval: 1200, label: 'Hard', emoji: '🦈' }
+};
+let currentDifficulty = localStorage.getItem('flappyPelicanDifficulty') || 'medium';
+
+function applyDifficulty(key) {
+  currentDifficulty = key;
+  const d = DIFFICULTIES[key];
+  GRAVITY = d.gravity;
+  FLAP_STRENGTH = d.flap;
+  PIPE_SPEED = d.speed;
+  PIPE_GAP = d.gap;
+  PIPE_SPAWN_INTERVAL = d.interval;
+  localStorage.setItem('flappyPelicanDifficulty', key);
+}
+applyDifficulty(currentDifficulty); // apply on load
 
 // ── Canvas Setup ───────────────────────────────────────────
 const canvas = document.getElementById('game');
@@ -42,8 +62,14 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// ── High Score ────────────────────────────────────────────
-let bestScore = parseInt(localStorage.getItem('flappyPelicanBest') || '0', 10);
+// ── High Score (per-difficulty) ───────────────────────────
+function getBestScore(key) {
+  return parseInt(localStorage.getItem('flappyPelicanBest_' + key) || '0', 10);
+}
+function setBestScore(key, val) {
+  localStorage.setItem('flappyPelicanBest_' + key, String(val));
+}
+let bestScore = getBestScore(currentDifficulty);
 
 // ── Game State ─────────────────────────────────────────────
 let state = 'menu';
@@ -68,6 +94,15 @@ function resetGame() {
   groundOffset = 0;
 }
 
+// ── Difficulty Button Hit-Test ────────────────────────────
+// Button rects are computed in drawMenu() and stored here for click detection
+let difficultyButtons = []; // [{key, x, y, w, h}, ...]
+
+function selectDifficulty(key) {
+  applyDifficulty(key);
+  bestScore = getBestScore(currentDifficulty);
+}
+
 // ── Input ──────────────────────────────────────────────────
 function handleInput() {
   if (state === 'menu') {
@@ -79,12 +114,35 @@ function handleInput() {
     pelican.flapTimer = 12; // frames of wing-up animation
   } else if (state === 'game_over') {
     state = 'menu';
+    bestScore = getBestScore(currentDifficulty);
   }
 }
 
-canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); handleInput(); });
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (state === 'menu' && difficultyButtons.length > 0) {
+    // Convert pointer coords to canvas coords
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    for (const btn of difficultyButtons) {
+      if (cx >= btn.x && cx <= btn.x + btn.w && cy >= btn.y && cy <= btn.y + btn.h) {
+        selectDifficulty(btn.key);
+        return; // don't start the game, just select difficulty
+      }
+    }
+  }
+  handleInput();
+});
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); handleInput(); }
+  if (state === 'menu') {
+    if (e.key === '1') selectDifficulty('easy');
+    if (e.key === '2') selectDifficulty('medium');
+    if (e.key === '3') selectDifficulty('hard');
+  }
 });
 
 // ── Pipe Generation ────────────────────────────────────────
@@ -170,7 +228,7 @@ function update(now) {
     state = 'game_over';
     if (score > bestScore) {
       bestScore = score;
-      localStorage.setItem('flappyPelicanBest', String(bestScore));
+      setBestScore(currentDifficulty, bestScore);
     }
   }
 }
@@ -758,29 +816,86 @@ function drawMenu() {
   pelican.wingPhase = performance.now() * 0.003;
   drawPelican();
 
-  // Instruction with pulsing opacity
-  const pulse = 0.6 + Math.sin(performance.now() / 500) * 0.4;
-  ctx.globalAlpha = pulse;
-  ctx.font = '20px "Georgia", serif';
-  ctx.fillStyle = '#FFF';
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-  ctx.lineWidth = 2;
-  ctx.strokeText('Tap or press Space to play', W / 2, H / 2 + 70);
-  ctx.fillText('Tap or press Space to play', W / 2, H / 2 + 70);
-  ctx.globalAlpha = 1;
+  // ── Difficulty Selector ──────────────────────────────────
+  const btnW = 120, btnH = 42, btnGap = 12;
+  const totalW = 3 * btnW + 2 * btnGap;
+  const startX = (W - totalW) / 2;
+  const btnY = H / 2 + 50;
+  const keys = ['easy', 'medium', 'hard'];
+  difficultyButtons = []; // reset each frame
 
-  // Best score (if any)
+  for (let i = 0; i < 3; i++) {
+    const key = keys[i];
+    const d = DIFFICULTIES[key];
+    const bx = startX + i * (btnW + btnGap);
+    const isSelected = (key === currentDifficulty);
+
+    // Store for hit-testing
+    difficultyButtons.push({ key, x: bx, y: btnY, w: btnW, h: btnH });
+
+    // Button background
+    ctx.fillStyle = isSelected ? 'rgba(255, 215, 0, 0.25)' : 'rgba(30, 15, 5, 0.55)';
+    ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = isSelected ? 2.5 : 1.5;
+    roundRect(bx, btnY, btnW, btnH, 10);
+
+    // Selected glow
+    if (isSelected) {
+      ctx.save();
+      ctx.shadowColor = '#FFD700';
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bx + 10, btnY);
+      ctx.lineTo(bx + btnW - 10, btnY);
+      ctx.quadraticCurveTo(bx + btnW, btnY, bx + btnW, btnY + 10);
+      ctx.lineTo(bx + btnW, btnY + btnH - 10);
+      ctx.quadraticCurveTo(bx + btnW, btnY + btnH, bx + btnW - 10, btnY + btnH);
+      ctx.lineTo(bx + 10, btnY + btnH);
+      ctx.quadraticCurveTo(bx, btnY + btnH, bx, btnY + btnH - 10);
+      ctx.lineTo(bx, btnY + 10);
+      ctx.quadraticCurveTo(bx, btnY, bx + 10, btnY);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Button label
+    ctx.font = isSelected ? 'bold 16px "Georgia", serif' : '15px "Georgia", serif';
+    ctx.fillStyle = isSelected ? '#FFD700' : '#fde8c8';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.lineWidth = 1.5;
+    const label = d.emoji + ' ' + d.label;
+    ctx.strokeText(label, bx + btnW / 2, btnY + btnH / 2 + 6);
+    ctx.fillText(label, bx + btnW / 2, btnY + btnH / 2 + 6);
+  }
+
+  // Best score for selected difficulty
   if (bestScore > 0) {
     ctx.font = '16px "Georgia", serif';
     ctx.fillStyle = '#fde8c8';
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.lineWidth = 1.5;
-    ctx.strokeText('Best: ' + bestScore, W / 2, H / 2 + 100);
-    ctx.fillText('Best: ' + bestScore, W / 2, H / 2 + 100);
+    ctx.strokeText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, btnY + btnH + 28);
+    ctx.fillText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, btnY + btnH + 28);
   }
+
+  // Instruction with pulsing opacity
+  const pulse = 0.6 + Math.sin(performance.now() / 500) * 0.4;
+  ctx.globalAlpha = pulse;
+  ctx.font = '18px "Georgia", serif';
+  ctx.fillStyle = '#FFF';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.strokeText('Tap or press Space to play', W / 2, btnY + btnH + 60);
+  ctx.fillText('Tap or press Space to play', W / 2, btnY + btnH + 60);
+  ctx.globalAlpha = 1;
 }
 
 function drawGameOver() {
+  const d = DIFFICULTIES[currentDifficulty];
+
   // Dim overlay
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
   ctx.fillRect(0, 0, W, H);
@@ -792,7 +907,7 @@ function drawGameOver() {
   ctx.fillStyle = 'rgba(30, 15, 5, 0.7)';
   ctx.strokeStyle = '#D4A017';
   ctx.lineWidth = 2;
-  roundRect(panelX, panelY, 240, 200, 12);
+  roundRect(panelX, panelY, 240, 220, 12);
 
   // Game Over text
   ctx.font = 'bold 38px "Georgia", serif';
@@ -805,25 +920,33 @@ function drawGameOver() {
   ctx.fillStyle = goGrad;
   ctx.fillText('Game Over', W / 2, panelY + 40);
 
+  // Difficulty label
+  ctx.font = '16px "Georgia", serif';
+  ctx.fillStyle = '#fde8c8';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeText(d.label + ' ' + d.emoji, W / 2, panelY + 65);
+  ctx.fillText(d.label + ' ' + d.emoji, W / 2, panelY + 65);
+
   // Score
   ctx.font = 'bold 28px "Georgia", serif';
   ctx.fillStyle = '#FFF';
   ctx.strokeStyle = '#2a1a00';
   ctx.lineWidth = 2;
-  ctx.strokeText('Score: ' + score, W / 2, panelY + 90);
-  ctx.fillText('Score: ' + score, W / 2, panelY + 90);
+  ctx.strokeText('Score: ' + score, W / 2, panelY + 100);
+  ctx.fillText('Score: ' + score, W / 2, panelY + 100);
 
   // Best score
   ctx.font = '22px "Georgia", serif';
   ctx.fillStyle = '#FFD700';
-  ctx.strokeText('Best: ' + bestScore, W / 2, panelY + 125);
-  ctx.fillText('Best: ' + bestScore, W / 2, panelY + 125);
+  ctx.strokeText('Best: ' + bestScore, W / 2, panelY + 135);
+  ctx.fillText('Best: ' + bestScore, W / 2, panelY + 135);
 
   // New best indicator
   if (score >= bestScore && score > 0) {
     ctx.font = 'bold 16px "Georgia", serif';
     ctx.fillStyle = '#ff6b6b';
-    ctx.fillText('★ NEW BEST! ★', W / 2, panelY + 155);
+    ctx.fillText('★ NEW BEST! ★', W / 2, panelY + 165);
   }
 
   // Restart instruction
@@ -833,8 +956,8 @@ function drawGameOver() {
   ctx.fillStyle = '#fde8c8';
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
   ctx.lineWidth = 1.5;
-  ctx.strokeText('Tap to play again', W / 2, panelY + 185);
-  ctx.fillText('Tap to play again', W / 2, panelY + 185);
+  ctx.strokeText('Tap to play again', W / 2, panelY + 200);
+  ctx.fillText('Tap to play again', W / 2, panelY + 200);
   ctx.globalAlpha = 1;
 }
 
