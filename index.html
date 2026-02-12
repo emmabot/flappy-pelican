@@ -27,7 +27,7 @@ const PELICAN_X = 80;
 
 // ── Difficulty Presets ───────────────────────────────────────
 const DIFFICULTIES = {
-  easy:   { gravity: 0.30, flap: -6.5, speed: 1.8, gap: 175, interval: 2200, label: 'Easy', emoji: '🌊' },
+  easy:   { gravity: 0.22, flap: -5.8, speed: 1.3, gap: 200, interval: 2800, label: 'Easy', emoji: '🌊' },
   medium: { gravity: 0.40, flap: -7.2, speed: 2.5, gap: 140, interval: 1600, label: 'Medium', emoji: '🏄' },
   hard:   { gravity: 0.50, flap: -8.0, speed: 3.2, gap: 115, interval: 1200, label: 'Hard', emoji: '🦈' }
 };
@@ -44,6 +44,17 @@ function applyDifficulty(key) {
   localStorage.setItem('flappyPelicanDifficulty', key);
 }
 applyDifficulty(currentDifficulty); // apply on load
+
+// ── Habitat System ─────────────────────────────────────────
+let currentHabitat = localStorage.getItem('flappyPelicanHabitat') || 'halfmoonbay';
+let habitatButtons = []; // [{key, x, y, w, h}, ...]
+
+function selectHabitat(key) {
+  currentHabitat = key;
+  localStorage.setItem('flappyPelicanHabitat', key);
+}
+
+function getHabitat() { return HABITATS[currentHabitat] || HABITATS.halfmoonbay; }
 
 // ── Canvas Setup ───────────────────────────────────────────
 const canvas = document.getElementById('game');
