@@ -410,128 +410,292 @@ function drawPelican() {
   ctx.rotate(pelican.rotation);
 
   const hw = PELICAN_W / 2, hh = PELICAN_H / 2;
+  const flapping = pelican.flapTimer > 0;
+  const wp = pelican.wingPhase;
+  const pouchSway = Math.sin(wp * 1.3) * 1.2;
 
-  // ── Tail feathers ──
-  ctx.fillStyle = '#5a3e1a';
+  // ── 1. Tail feathers — dark brown wedge fan ──
+  ctx.fillStyle = '#3a2818';
   ctx.beginPath();
-  ctx.moveTo(-hw - 2, -2);
-  ctx.lineTo(-hw - 12, -6);
-  ctx.lineTo(-hw - 14, 0);
-  ctx.lineTo(-hw - 12, 5);
-  ctx.lineTo(-hw - 2, 3);
+  ctx.moveTo(-hw - 1, -3);
+  ctx.lineTo(-hw - 14, -8);
+  ctx.lineTo(-hw - 16, -4);
+  ctx.lineTo(-hw - 17, 0);
+  ctx.lineTo(-hw - 16, 4);
+  ctx.lineTo(-hw - 14, 7);
+  ctx.lineTo(-hw - 1, 3);
   ctx.closePath();
   ctx.fill();
+  // Individual feather lines
+  ctx.strokeStyle = '#2a1a0a';
+  ctx.lineWidth = 0.5;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(-hw - 1, i * 1.2);
+    ctx.lineTo(-hw - 15, i * 3.2);
+    ctx.stroke();
+  }
 
-  // ── Body (oval, brown) ──
-  ctx.fillStyle = '#6B4226';
+  // ── 2. Body — dark upper, cream belly ──
+  // Upper body (dark grayish-brown)
+  ctx.fillStyle = '#4a3828';
   ctx.beginPath();
   ctx.ellipse(0, 0, hw + 2, hh, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Body highlight
-  ctx.fillStyle = 'rgba(139, 90, 43, 0.5)';
+  // Belly (cream-white, lower half)
+  ctx.save();
   ctx.beginPath();
-  ctx.ellipse(-2, -3, hw - 4, hh - 5, 0, 0, Math.PI * 2);
+  ctx.rect(-hw - 4, 0, (hw + 4) * 2, hh + 4);
+  ctx.clip();
+  ctx.fillStyle = '#F0E8D8';
+  ctx.beginPath();
+  ctx.ellipse(0, 2, hw, hh - 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  // Subtle gradient transition on body
+  ctx.fillStyle = 'rgba(90, 72, 56, 0.25)';
+  ctx.beginPath();
+  ctx.ellipse(0, -4, hw - 2, hh - 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // ── Wing (animated) ──
-  const flapping = pelican.flapTimer > 0;
-  let wingY = 0;
+  // ── 3. Wing (animated, layered feathers) ──
+  let wingAngle = 0;
+  let wingSpread = 0;
   if (flapping) {
-    wingY = -8 - Math.sin(pelican.flapTimer * 0.8) * 6; // wings up during flap
+    wingAngle = -0.35 - Math.sin(pelican.flapTimer * 0.8) * 0.4;
+    wingSpread = 0.5 + Math.sin(pelican.flapTimer * 0.8) * 0.5;
   } else {
-    wingY = 2 + Math.sin(pelican.wingPhase) * 2; // gentle glide bob
+    wingAngle = 0.05 + Math.sin(wp) * 0.06;
+    wingSpread = 0;
   }
-  // Wing shape
-  ctx.fillStyle = '#4a2e14';
+  ctx.save();
+  ctx.translate(-4, -4);
+  ctx.rotate(wingAngle);
+  // Wing coverts (silvery gray-brown base)
+  ctx.fillStyle = '#8a8070';
   ctx.beginPath();
-  ctx.moveTo(-hw + 6, 0);
-  ctx.quadraticCurveTo(-4, wingY - 6, 6, wingY - 4);
-  ctx.quadraticCurveTo(2, wingY + 4, -hw + 6, 4);
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(8, -10 - wingSpread * 6, 18, -4 - wingSpread * 4);
+  ctx.quadraticCurveTo(10, 4, 0, 5);
   ctx.closePath();
   ctx.fill();
-  // Wing feather detail
-  ctx.strokeStyle = 'rgba(90, 60, 30, 0.5)';
-  ctx.lineWidth = 0.7;
+  // Brown streaks on coverts
+  ctx.strokeStyle = 'rgba(74, 56, 40, 0.4)';
+  ctx.lineWidth = 0.6;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(2 + i * 3, 1 - i);
+    ctx.quadraticCurveTo(8 + i * 2, -4 - i * 2 - wingSpread * 3, 14 + i, -2 - i - wingSpread * 2);
+    ctx.stroke();
+  }
+  // Secondary feathers (gray with lighter edges)
+  ctx.fillStyle = '#6a6258';
   ctx.beginPath();
-  ctx.moveTo(-hw + 10, 1);
-  ctx.quadraticCurveTo(-2, wingY - 2, 4, wingY - 1);
+  ctx.moveTo(4, 2);
+  ctx.quadraticCurveTo(14, -8 - wingSpread * 5, 22, -2 - wingSpread * 3);
+  ctx.quadraticCurveTo(14, 6, 4, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(180, 170, 155, 0.5)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(10, -2 - wingSpread * 2);
+  ctx.quadraticCurveTo(16, -5 - wingSpread * 4, 22, -2 - wingSpread * 3);
   ctx.stroke();
+  // Primary feathers (dark brown/black, fan out during flap)
+  ctx.fillStyle = '#2a2018';
+  const primaries = 4;
+  for (let i = 0; i < primaries; i++) {
+    const spread = wingSpread * (i - 1.5) * 0.12;
+    const len = 10 + i * 2;
+    const baseX = 14 + i * 2;
+    const baseY = -1 - wingSpread * 2 - i * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.lineTo(baseX + len, baseY - 4 - wingSpread * 4 + spread * 8);
+    ctx.lineTo(baseX + len - 1.5, baseY - 2 - wingSpread * 3 + spread * 8);
+    ctx.lineTo(baseX - 1, baseY + 1.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 
-  // ── Neck (white/cream, connects body to head) ──
+  // ── 4. S-curved neck ──
+  // Neck back (chestnut/mahogany nape)
+  const neckBaseX = hw - 6;
+  const neckBaseY = -hh + 4;
+  const neckTopX = hw + 3;
+  const neckTopY = -hh - 12;
+  ctx.fillStyle = '#6B2A0A';
+  ctx.beginPath();
+  ctx.moveTo(neckBaseX - 2, neckBaseY);
+  ctx.bezierCurveTo(neckBaseX + 6, neckBaseY - 6, neckTopX + 4, neckTopY + 8, neckTopX + 2, neckTopY + 2);
+  ctx.lineTo(neckTopX - 2, neckTopY + 2);
+  ctx.bezierCurveTo(neckTopX, neckTopY + 8, neckBaseX + 2, neckBaseY - 4, neckBaseX - 6, neckBaseY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // Neck front (cream)
   ctx.fillStyle = '#F5E6C8';
   ctx.beginPath();
-  ctx.moveTo(hw - 8, -hh + 2);
-  ctx.quadraticCurveTo(hw + 2, -hh - 6, hw + 4, -hh - 10);
-  ctx.quadraticCurveTo(hw + 6, -hh - 4, hw, -hh + 6);
+  ctx.moveTo(neckBaseX - 5, neckBaseY + 1);
+  ctx.bezierCurveTo(neckBaseX, neckBaseY - 6, neckTopX - 1, neckTopY + 10, neckTopX - 3, neckTopY + 3);
+  ctx.lineTo(neckTopX - 1, neckTopY + 3);
+  ctx.bezierCurveTo(neckTopX + 1, neckTopY + 10, neckBaseX + 2, neckBaseY - 3, neckBaseX - 3, neckBaseY + 3);
   ctx.closePath();
   ctx.fill();
 
-  // ── Head (white/cream, round) ──
+  // ── 5. Head ──
+  const headX = hw + 2;
+  const headY = -hh - 14;
+  const headR = 6.5;
+  // Head base (cream-white)
   ctx.fillStyle = '#FFF8E7';
   ctx.beginPath();
-  ctx.arc(hw + 2, -hh - 10, 7, 0, Math.PI * 2);
+  ctx.arc(headX, headY, headR, 0, Math.PI * 2);
   ctx.fill();
-  // Crown (slight brown tinge on top of head — California Brown Pelican breeding plumage)
-  ctx.fillStyle = 'rgba(120, 60, 20, 0.35)';
-  ctx.beginPath();
-  ctx.arc(hw + 1, -hh - 13, 5, Math.PI, 0);
-  ctx.fill();
-
-  // ── Beak (long, yellow-orange with hook) ──
+  // Golden-yellow crown patch
   ctx.fillStyle = '#D4A017';
   ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 12);
-  ctx.lineTo(hw + 24, -hh - 8);
-  ctx.lineTo(hw + 23, -hh - 6); // hook tip
-  ctx.lineTo(hw + 8, -hh - 5);
+  ctx.arc(headX - 1, headY - 3, 5, Math.PI * 1.1, Math.PI * 1.95, true);
+  ctx.quadraticCurveTo(headX - 1, headY - 6.5, headX + 3, headY - 5);
   ctx.closePath();
   ctx.fill();
-  // Beak upper ridge
-  ctx.strokeStyle = '#b8860b';
-  ctx.lineWidth = 0.8;
+  // Chestnut nape extending from back of head
+  ctx.fillStyle = '#8B3A1A';
   ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 11);
-  ctx.lineTo(hw + 22, -hh - 8);
-  ctx.stroke();
-
-  // ── Throat pouch (signature pelican feature) ──
-  ctx.fillStyle = 'rgba(210, 160, 60, 0.6)';
-  ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 5);
-  ctx.quadraticCurveTo(hw + 16, -hh + 2, hw + 8, -hh + 1);
-  ctx.quadraticCurveTo(hw + 4, -hh - 1, hw + 8, -hh - 5);
+  ctx.arc(headX - 2, headY, headR - 1, Math.PI * 0.6, Math.PI * 1.2);
+  ctx.quadraticCurveTo(headX - 6, headY + 2, headX - 4, headY - 2);
+  ctx.closePath();
   ctx.fill();
-  // Pouch outline
-  ctx.strokeStyle = 'rgba(180, 130, 40, 0.5)';
-  ctx.lineWidth = 0.6;
-  ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 5);
-  ctx.quadraticCurveTo(hw + 16, -hh + 2, hw + 8, -hh + 1);
-  ctx.stroke();
 
-  // ── Eye ──
-  ctx.fillStyle = '#FFF';
+  // ── 6. Eye — PALE YELLOW iris ──
+  // Blue-gray eye ring
+  ctx.fillStyle = '#7a8a9a';
   ctx.beginPath();
-  ctx.arc(hw + 5, -hh - 11, 2.5, 0, Math.PI * 2);
+  ctx.arc(headX + 2.5, headY - 0.5, 3, 0, Math.PI * 2);
   ctx.fill();
+  // Pale yellow iris
+  ctx.fillStyle = '#E8D44D';
+  ctx.beginPath();
+  ctx.arc(headX + 2.5, headY - 0.5, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  // Dark pupil
   ctx.fillStyle = '#1a1a1a';
   ctx.beginPath();
-  ctx.arc(hw + 5.5, -hh - 11, 1.5, 0, Math.PI * 2);
+  ctx.arc(headX + 2.8, headY - 0.5, 1.1, 0, Math.PI * 2);
   ctx.fill();
-  // Eye highlight
+  // Tiny white highlight
   ctx.fillStyle = '#FFF';
   ctx.beginPath();
-  ctx.arc(hw + 6, -hh - 11.5, 0.5, 0, Math.PI * 2);
+  ctx.arc(headX + 3.3, headY - 1.2, 0.5, 0, Math.PI * 2);
   ctx.fill();
 
-  // ── Feet (tucked, visible during flight) ──
-  ctx.strokeStyle = '#D4A017';
-  ctx.lineWidth = 1;
+  // ── 7. Beak — LONG, gray-beige, hooked tip ──
+  const beakBase = headX + headR - 2;
+  const beakY = headY + 1;
+  const beakLen = 22;
+  // Upper mandible
+  ctx.fillStyle = '#9e9685';
   ctx.beginPath();
-  ctx.moveTo(2, hh - 1);
-  ctx.lineTo(5, hh + 5);
-  ctx.moveTo(0, hh - 1);
-  ctx.lineTo(-2, hh + 5);
+  ctx.moveTo(beakBase, beakY - 2.5);
+  ctx.lineTo(beakBase + beakLen, beakY - 0.5);
+  ctx.quadraticCurveTo(beakBase + beakLen + 1, beakY + 1, beakBase + beakLen - 1, beakY + 1.5); // hook
+  ctx.lineTo(beakBase, beakY);
+  ctx.closePath();
+  ctx.fill();
+  // Upper ridge (darker)
+  ctx.strokeStyle = '#7a736a';
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(beakBase + 1, beakY - 2);
+  ctx.lineTo(beakBase + beakLen - 1, beakY - 0.3);
+  ctx.stroke();
+  // Lower mandible
+  ctx.fillStyle = '#a8a090';
+  ctx.beginPath();
+  ctx.moveTo(beakBase, beakY + 0.5);
+  ctx.lineTo(beakBase + beakLen - 2, beakY + 1.5);
+  ctx.lineTo(beakBase + beakLen - 3, beakY + 2.5);
+  ctx.lineTo(beakBase, beakY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // Mandible seam/gap
+  ctx.strokeStyle = 'rgba(60, 50, 40, 0.4)';
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(beakBase + 2, beakY + 0.2);
+  ctx.lineTo(beakBase + beakLen - 2, beakY + 1.2);
+  ctx.stroke();
+
+  // ── 8. Throat/gular pouch — olive-green, droopy ──
+  const pouchX = beakBase + 4 + pouchSway * 0.3;
+  const pouchY = beakY + 2;
+  const pouchDroop = 8 + Math.sin(wp * 0.7) * 0.8;
+  ctx.fillStyle = '#6b7a3a';
+  ctx.beginPath();
+  ctx.moveTo(beakBase, pouchY);
+  ctx.lineTo(beakBase + beakLen - 4, pouchY + 1);
+  ctx.quadraticCurveTo(beakBase + beakLen - 8 + pouchSway, pouchY + pouchDroop, beakBase + 6 + pouchSway * 0.5, pouchY + pouchDroop - 1);
+  ctx.quadraticCurveTo(beakBase - 2 + pouchSway * 0.2, pouchY + pouchDroop * 0.5, beakBase - 1, pouchY + 1);
+  ctx.closePath();
+  ctx.fill();
+  // Pouch highlight (lighter olive)
+  ctx.fillStyle = 'rgba(138, 154, 80, 0.35)';
+  ctx.beginPath();
+  ctx.moveTo(beakBase + 4, pouchY + 2);
+  ctx.quadraticCurveTo(beakBase + 10 + pouchSway, pouchY + pouchDroop - 2, beakBase + 8 + pouchSway * 0.5, pouchY + pouchDroop - 3);
+  ctx.quadraticCurveTo(beakBase + 2, pouchY + pouchDroop * 0.4, beakBase + 2, pouchY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // Pouch outline
+  ctx.strokeStyle = 'rgba(80, 90, 40, 0.5)';
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(beakBase + beakLen - 4, pouchY + 1);
+  ctx.quadraticCurveTo(beakBase + beakLen - 8 + pouchSway, pouchY + pouchDroop, beakBase + 6 + pouchSway * 0.5, pouchY + pouchDroop - 1);
+  ctx.quadraticCurveTo(beakBase - 2 + pouchSway * 0.2, pouchY + pouchDroop * 0.5, beakBase - 1, pouchY + 1);
+  ctx.stroke();
+
+  // ── 9. Webbed feet — dark gray, totipalmate, tucked ──
+  ctx.strokeStyle = '#4a4a4a';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = 'rgba(90, 90, 90, 0.5)';
+  // Left foot
+  ctx.beginPath();
+  ctx.moveTo(-1, hh);
+  ctx.lineTo(-4, hh + 6);
+  ctx.lineTo(-1, hh + 5);
+  ctx.lineTo(1, hh + 7);
+  ctx.lineTo(3, hh + 5);
+  ctx.lineTo(5, hh + 6);
+  ctx.lineTo(2, hh);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Right foot
+  ctx.beginPath();
+  ctx.moveTo(5, hh);
+  ctx.lineTo(3, hh + 5);
+  ctx.lineTo(5, hh + 4);
+  ctx.lineTo(7, hh + 6);
+  ctx.lineTo(9, hh + 4);
+  ctx.lineTo(11, hh + 5);
+  ctx.lineTo(8, hh);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Webbing lines between toes
+  ctx.strokeStyle = 'rgba(60, 60, 60, 0.4)';
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(-2, hh + 5);
+  ctx.lineTo(1, hh + 6);
+  ctx.moveTo(1, hh + 6);
+  ctx.lineTo(4, hh + 5);
+  ctx.moveTo(4, hh + 4);
+  ctx.lineTo(7, hh + 5);
+  ctx.moveTo(7, hh + 5);
+  ctx.lineTo(10, hh + 4);
   ctx.stroke();
 
   ctx.restore();
