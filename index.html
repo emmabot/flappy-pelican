@@ -15,15 +15,35 @@
 <script>
 // ── Constants ──────────────────────────────────────────────
 const W = 480, H = 640;
-const GRAVITY = 0.45;
-const FLAP_STRENGTH = -7.5;
-const PIPE_SPEED = 2.5;
+let GRAVITY = 0.40;
+let FLAP_STRENGTH = -7.2;
+let PIPE_SPEED = 2.5;
 const PIPE_WIDTH = 60;
-const PIPE_GAP = 130;
-const PIPE_SPAWN_INTERVAL = 1600;
+let PIPE_GAP = 140;
+let PIPE_SPAWN_INTERVAL = 1600;
 const GROUND_HEIGHT = 60;
 const PELICAN_W = 40, PELICAN_H = 30;
 const PELICAN_X = 80;
+
+// ── Difficulty Presets ───────────────────────────────────────
+const DIFFICULTIES = {
+  easy:   { gravity: 0.30, flap: -6.5, speed: 1.8, gap: 175, interval: 2200, label: 'Easy', emoji: '🌊' },
+  medium: { gravity: 0.40, flap: -7.2, speed: 2.5, gap: 140, interval: 1600, label: 'Medium', emoji: '🏄' },
+  hard:   { gravity: 0.50, flap: -8.0, speed: 3.2, gap: 115, interval: 1200, label: 'Hard', emoji: '🦈' }
+};
+let currentDifficulty = localStorage.getItem('flappyPelicanDifficulty') || 'medium';
+
+function applyDifficulty(key) {
+  currentDifficulty = key;
+  const d = DIFFICULTIES[key];
+  GRAVITY = d.gravity;
+  FLAP_STRENGTH = d.flap;
+  PIPE_SPEED = d.speed;
+  PIPE_GAP = d.gap;
+  PIPE_SPAWN_INTERVAL = d.interval;
+  localStorage.setItem('flappyPelicanDifficulty', key);
+}
+applyDifficulty(currentDifficulty); // apply on load
 
 // ── Canvas Setup ───────────────────────────────────────────
 const canvas = document.getElementById('game');
@@ -42,8 +62,14 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// ── High Score ────────────────────────────────────────────
-let bestScore = parseInt(localStorage.getItem('flappyPelicanBest') || '0', 10);
+// ── High Score (per-difficulty) ───────────────────────────
+function getBestScore(key) {
+  return parseInt(localStorage.getItem('flappyPelicanBest_' + key) || '0', 10);
+}
+function setBestScore(key, val) {
+  localStorage.setItem('flappyPelicanBest_' + key, String(val));
+}
+let bestScore = getBestScore(currentDifficulty);
 
 // ── Game State ─────────────────────────────────────────────
 let state = 'menu';
@@ -54,6 +80,10 @@ let lastPipeSpawn = 0;
 let lastTime = 0;
 let groundOffset = 0;
 let parallaxOffset = 0;
+let pipeCount = 0;
+let simonTriggered = false;
+let shakeTimer = 0;
+let shakeIntensity = 0;
 
 function resetGame() {
   pelican.y = H / 2 - 50;
@@ -66,6 +96,19 @@ function resetGame() {
   lastPipeSpawn = 0;
   lastTime = 0;
   groundOffset = 0;
+  pipeCount = 0;
+  simonTriggered = false;
+  shakeTimer = 0;
+  shakeIntensity = 0;
+}
+
+// ── Difficulty Button Hit-Test ────────────────────────────
+// Button rects are computed in drawMenu() and stored here for click detection
+let difficultyButtons = []; // [{key, x, y, w, h}, ...]
+
+function selectDifficulty(key) {
+  applyDifficulty(key);
+  bestScore = getBestScore(currentDifficulty);
 }
 
 // ── Input ──────────────────────────────────────────────────
@@ -79,12 +122,35 @@ function handleInput() {
     pelican.flapTimer = 12; // frames of wing-up animation
   } else if (state === 'game_over') {
     state = 'menu';
+    bestScore = getBestScore(currentDifficulty);
   }
 }
 
-canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); handleInput(); });
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (state === 'menu' && difficultyButtons.length > 0) {
+    // Convert pointer coords to canvas coords
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = W / rect.width;
+    const scaleY = H / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    for (const btn of difficultyButtons) {
+      if (cx >= btn.x && cx <= btn.x + btn.w && cy >= btn.y && cy <= btn.y + btn.h) {
+        selectDifficulty(btn.key);
+        return; // don't start the game, just select difficulty
+      }
+    }
+  }
+  handleInput();
+});
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); handleInput(); }
+  if (state === 'menu') {
+    if (e.key === '1') selectDifficulty('easy');
+    if (e.key === '2') selectDifficulty('medium');
+    if (e.key === '3') selectDifficulty('hard');
+  }
 });
 
 // ── Pipe Generation ────────────────────────────────────────
@@ -92,11 +158,16 @@ function spawnPipe() {
   const minTop = 80;
   const maxTop = H - GROUND_HEIGHT - PIPE_GAP - 80;
   const topHeight = minTop + Math.random() * (maxTop - minTop);
+  pipeCount++;
+  const hasSimon = (!simonTriggered && pipeCount === 11);
+  if (hasSimon) simonTriggered = true;
   pipes.push({
     x: W + 10,
     topH: topHeight,
     bottomY: topHeight + PIPE_GAP,
-    scored: false
+    scored: false,
+    hasSimon: hasSimon,
+    simonFrame: 0
   });
 }
 
@@ -168,9 +239,11 @@ function update(now) {
   // Collision
   if (checkCollision()) {
     state = 'game_over';
+    shakeTimer = 12;
+    shakeIntensity = 6;
     if (score > bestScore) {
       bestScore = score;
-      localStorage.setItem('flappyPelicanBest', String(bestScore));
+      setBestScore(currentDifficulty, bestScore);
     }
   }
 }
@@ -350,6 +423,172 @@ function drawPilingTexture(x, y, w, h) {
   }
 }
 
+function drawSimon(pipe) {
+  ctx.save();
+  pipe.simonFrame++;
+  const f = pipe.simonFrame;
+  // Pop-up animation: slide up over first 20 frames
+  const popProgress = Math.min(f / 20, 1);
+  const simonHeight = 80; // total visible height of Simon
+  const peekX = pipe.x + PIPE_WIDTH + 2; // right edge of piling
+  const capTop = pipe.bottomY; // top of bottom piling cap
+  const baseY = capTop + simonHeight; // hidden position
+  const simonY = baseY - (simonHeight * popProgress); // slide up
+
+  // Clip so Simon doesn't draw below the piling cap top area
+  ctx.beginPath();
+  ctx.rect(peekX - 30, capTop - simonHeight - 10, 80, simonHeight + 10);
+  ctx.clip();
+
+  const cx = peekX; // center x of Simon
+  const cy = simonY;
+
+  // ── Blue T-shirt ──
+  ctx.fillStyle = '#3b82f6';
+  ctx.beginPath();
+  ctx.moveTo(cx - 18, cy + 10);
+  ctx.lineTo(cx + 18, cy + 10);
+  ctx.lineTo(cx + 20, cy + 45);
+  ctx.lineTo(cx - 20, cy + 45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // ── Neck ──
+  ctx.fillStyle = '#f0c8a0';
+  ctx.fillRect(cx - 5, cy + 2, 10, 12);
+
+  // ── Head (round face) ──
+  ctx.fillStyle = '#f0c8a0';
+  ctx.beginPath();
+  ctx.arc(cx, cy - 10, 16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#d4a574';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // ── Short messy brown hair ──
+  ctx.fillStyle = '#5c3317';
+  ctx.beginPath();
+  ctx.arc(cx, cy - 14, 16, Math.PI, 0);
+  ctx.fill();
+  // Messy tufts
+  ctx.beginPath();
+  ctx.ellipse(cx - 10, cy - 26, 5, 6, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx + 2, cy - 28, 5, 5, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx + 11, cy - 24, 4, 5, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Wire-frame glasses ──
+  ctx.strokeStyle = '#555';
+  ctx.lineWidth = 1.5;
+  // Left lens
+  ctx.beginPath();
+  ctx.arc(cx - 7, cy - 10, 6, 0, Math.PI * 2);
+  ctx.stroke();
+  // Right lens
+  ctx.beginPath();
+  ctx.arc(cx + 7, cy - 10, 6, 0, Math.PI * 2);
+  ctx.stroke();
+  // Bridge
+  ctx.beginPath();
+  ctx.moveTo(cx - 1, cy - 10);
+  ctx.lineTo(cx + 1, cy - 10);
+  ctx.stroke();
+  // Temples
+  ctx.beginPath();
+  ctx.moveTo(cx - 13, cy - 10);
+  ctx.lineTo(cx - 16, cy - 12);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + 13, cy - 10);
+  ctx.lineTo(cx + 16, cy - 12);
+  ctx.stroke();
+
+  // ── Eyes (behind glasses) ──
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(cx - 7, cy - 10, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 7, cy - 10, 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Big friendly smile ──
+  ctx.strokeStyle = '#c0705a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy - 3, 8, 0.15, Math.PI - 0.15);
+  ctx.stroke();
+
+  // ── Waving hand (right side, oscillates with sin) ──
+  const waveAngle = Math.sin(f * 0.15) * 0.4;
+  ctx.save();
+  ctx.translate(cx + 20, cy + 15);
+  ctx.rotate(-0.8 + waveAngle);
+  // Arm
+  ctx.strokeStyle = '#f0c8a0';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, -20);
+  ctx.stroke();
+  // Hand
+  ctx.fillStyle = '#f0c8a0';
+  ctx.beginPath();
+  ctx.arc(0, -22, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // ── Left hand holding sign ──
+  ctx.save();
+  ctx.translate(cx - 22, cy + 12);
+  // Arm
+  ctx.strokeStyle = '#f0c8a0';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-5, -18);
+  ctx.stroke();
+  // Hand
+  ctx.fillStyle = '#f0c8a0';
+  ctx.beginPath();
+  ctx.arc(-5, -20, 4, 0, Math.PI * 2);
+  ctx.fill();
+  // Sign
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-28, -42, 48, 20);
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-28, -42, 48, 20);
+  // Sign text: "I ❤️ Pelicans"
+  ctx.fillStyle = '#333';
+  ctx.font = 'bold 8px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('I', -20, -32);
+  ctx.fillStyle = '#e74c3c';
+  ctx.fillText('❤', -13, -32);
+  ctx.fillStyle = '#333';
+  ctx.fillText('Pelicans', 5, -32);
+  // Sign stick
+  ctx.strokeStyle = '#8B6914';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-4, -22);
+  ctx.lineTo(-4, -42);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
 function drawPipes() {
   for (const pipe of pipes) {
     // ── Top piling (hangs from top) ──
@@ -401,6 +640,11 @@ function drawPipes() {
       const ah = 4 + Math.sin(ax * 0.3) * 3;
       ctx.fillRect(ax, algaeY - ah, 3, ah + 8);
     }
+
+    // Simon Willison easter egg
+    if (pipe.hasSimon) {
+      drawSimon(pipe);
+    }
   }
 }
 
@@ -410,128 +654,292 @@ function drawPelican() {
   ctx.rotate(pelican.rotation);
 
   const hw = PELICAN_W / 2, hh = PELICAN_H / 2;
+  const flapping = pelican.flapTimer > 0;
+  const wp = pelican.wingPhase;
+  const pouchSway = Math.sin(wp * 1.3) * 1.2;
 
-  // ── Tail feathers ──
-  ctx.fillStyle = '#5a3e1a';
+  // ── 1. Tail feathers — dark brown wedge fan ──
+  ctx.fillStyle = '#3a2818';
   ctx.beginPath();
-  ctx.moveTo(-hw - 2, -2);
-  ctx.lineTo(-hw - 12, -6);
-  ctx.lineTo(-hw - 14, 0);
-  ctx.lineTo(-hw - 12, 5);
-  ctx.lineTo(-hw - 2, 3);
+  ctx.moveTo(-hw - 1, -3);
+  ctx.lineTo(-hw - 14, -8);
+  ctx.lineTo(-hw - 16, -4);
+  ctx.lineTo(-hw - 17, 0);
+  ctx.lineTo(-hw - 16, 4);
+  ctx.lineTo(-hw - 14, 7);
+  ctx.lineTo(-hw - 1, 3);
   ctx.closePath();
   ctx.fill();
+  // Individual feather lines
+  ctx.strokeStyle = '#2a1a0a';
+  ctx.lineWidth = 0.5;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(-hw - 1, i * 1.2);
+    ctx.lineTo(-hw - 15, i * 3.2);
+    ctx.stroke();
+  }
 
-  // ── Body (oval, brown) ──
-  ctx.fillStyle = '#6B4226';
+  // ── 2. Body — dark upper, cream belly ──
+  // Upper body (dark grayish-brown)
+  ctx.fillStyle = '#4a3828';
   ctx.beginPath();
   ctx.ellipse(0, 0, hw + 2, hh, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Body highlight
-  ctx.fillStyle = 'rgba(139, 90, 43, 0.5)';
+  // Belly (cream-white, lower half)
+  ctx.save();
   ctx.beginPath();
-  ctx.ellipse(-2, -3, hw - 4, hh - 5, 0, 0, Math.PI * 2);
+  ctx.rect(-hw - 4, 0, (hw + 4) * 2, hh + 4);
+  ctx.clip();
+  ctx.fillStyle = '#F0E8D8';
+  ctx.beginPath();
+  ctx.ellipse(0, 2, hw, hh - 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  // Subtle gradient transition on body
+  ctx.fillStyle = 'rgba(90, 72, 56, 0.25)';
+  ctx.beginPath();
+  ctx.ellipse(0, -4, hw - 2, hh - 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // ── Wing (animated) ──
-  const flapping = pelican.flapTimer > 0;
-  let wingY = 0;
+  // ── 3. Wing (animated, layered feathers) ──
+  let wingAngle = 0;
+  let wingSpread = 0;
   if (flapping) {
-    wingY = -8 - Math.sin(pelican.flapTimer * 0.8) * 6; // wings up during flap
+    wingAngle = -0.35 - Math.sin(pelican.flapTimer * 0.8) * 0.4;
+    wingSpread = 0.5 + Math.sin(pelican.flapTimer * 0.8) * 0.5;
   } else {
-    wingY = 2 + Math.sin(pelican.wingPhase) * 2; // gentle glide bob
+    wingAngle = 0.05 + Math.sin(wp) * 0.06;
+    wingSpread = 0;
   }
-  // Wing shape
-  ctx.fillStyle = '#4a2e14';
+  ctx.save();
+  ctx.translate(-4, -4);
+  ctx.rotate(wingAngle);
+  // Wing coverts (silvery gray-brown base)
+  ctx.fillStyle = '#8a8070';
   ctx.beginPath();
-  ctx.moveTo(-hw + 6, 0);
-  ctx.quadraticCurveTo(-4, wingY - 6, 6, wingY - 4);
-  ctx.quadraticCurveTo(2, wingY + 4, -hw + 6, 4);
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(8, -10 - wingSpread * 6, 18, -4 - wingSpread * 4);
+  ctx.quadraticCurveTo(10, 4, 0, 5);
   ctx.closePath();
   ctx.fill();
-  // Wing feather detail
-  ctx.strokeStyle = 'rgba(90, 60, 30, 0.5)';
-  ctx.lineWidth = 0.7;
+  // Brown streaks on coverts
+  ctx.strokeStyle = 'rgba(74, 56, 40, 0.4)';
+  ctx.lineWidth = 0.6;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(2 + i * 3, 1 - i);
+    ctx.quadraticCurveTo(8 + i * 2, -4 - i * 2 - wingSpread * 3, 14 + i, -2 - i - wingSpread * 2);
+    ctx.stroke();
+  }
+  // Secondary feathers (gray with lighter edges)
+  ctx.fillStyle = '#6a6258';
   ctx.beginPath();
-  ctx.moveTo(-hw + 10, 1);
-  ctx.quadraticCurveTo(-2, wingY - 2, 4, wingY - 1);
+  ctx.moveTo(4, 2);
+  ctx.quadraticCurveTo(14, -8 - wingSpread * 5, 22, -2 - wingSpread * 3);
+  ctx.quadraticCurveTo(14, 6, 4, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(180, 170, 155, 0.5)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(10, -2 - wingSpread * 2);
+  ctx.quadraticCurveTo(16, -5 - wingSpread * 4, 22, -2 - wingSpread * 3);
   ctx.stroke();
+  // Primary feathers (dark brown/black, fan out during flap)
+  ctx.fillStyle = '#2a2018';
+  const primaries = 4;
+  for (let i = 0; i < primaries; i++) {
+    const spread = wingSpread * (i - 1.5) * 0.12;
+    const len = 10 + i * 2;
+    const baseX = 14 + i * 2;
+    const baseY = -1 - wingSpread * 2 - i * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.lineTo(baseX + len, baseY - 4 - wingSpread * 4 + spread * 8);
+    ctx.lineTo(baseX + len - 1.5, baseY - 2 - wingSpread * 3 + spread * 8);
+    ctx.lineTo(baseX - 1, baseY + 1.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
 
-  // ── Neck (white/cream, connects body to head) ──
+  // ── 4. S-curved neck ──
+  // Neck back (chestnut/mahogany nape)
+  const neckBaseX = hw - 6;
+  const neckBaseY = -hh + 4;
+  const neckTopX = hw + 3;
+  const neckTopY = -hh - 12;
+  ctx.fillStyle = '#6B2A0A';
+  ctx.beginPath();
+  ctx.moveTo(neckBaseX - 2, neckBaseY);
+  ctx.bezierCurveTo(neckBaseX + 6, neckBaseY - 6, neckTopX + 4, neckTopY + 8, neckTopX + 2, neckTopY + 2);
+  ctx.lineTo(neckTopX - 2, neckTopY + 2);
+  ctx.bezierCurveTo(neckTopX, neckTopY + 8, neckBaseX + 2, neckBaseY - 4, neckBaseX - 6, neckBaseY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // Neck front (cream)
   ctx.fillStyle = '#F5E6C8';
   ctx.beginPath();
-  ctx.moveTo(hw - 8, -hh + 2);
-  ctx.quadraticCurveTo(hw + 2, -hh - 6, hw + 4, -hh - 10);
-  ctx.quadraticCurveTo(hw + 6, -hh - 4, hw, -hh + 6);
+  ctx.moveTo(neckBaseX - 5, neckBaseY + 1);
+  ctx.bezierCurveTo(neckBaseX, neckBaseY - 6, neckTopX - 1, neckTopY + 10, neckTopX - 3, neckTopY + 3);
+  ctx.lineTo(neckTopX - 1, neckTopY + 3);
+  ctx.bezierCurveTo(neckTopX + 1, neckTopY + 10, neckBaseX + 2, neckBaseY - 3, neckBaseX - 3, neckBaseY + 3);
   ctx.closePath();
   ctx.fill();
 
-  // ── Head (white/cream, round) ──
+  // ── 5. Head ──
+  const headX = hw + 2;
+  const headY = -hh - 14;
+  const headR = 6.5;
+  // Head base (cream-white)
   ctx.fillStyle = '#FFF8E7';
   ctx.beginPath();
-  ctx.arc(hw + 2, -hh - 10, 7, 0, Math.PI * 2);
+  ctx.arc(headX, headY, headR, 0, Math.PI * 2);
   ctx.fill();
-  // Crown (slight brown tinge on top of head — California Brown Pelican breeding plumage)
-  ctx.fillStyle = 'rgba(120, 60, 20, 0.35)';
-  ctx.beginPath();
-  ctx.arc(hw + 1, -hh - 13, 5, Math.PI, 0);
-  ctx.fill();
-
-  // ── Beak (long, yellow-orange with hook) ──
+  // Golden-yellow crown patch
   ctx.fillStyle = '#D4A017';
   ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 12);
-  ctx.lineTo(hw + 24, -hh - 8);
-  ctx.lineTo(hw + 23, -hh - 6); // hook tip
-  ctx.lineTo(hw + 8, -hh - 5);
+  ctx.arc(headX - 1, headY - 3, 5, Math.PI * 1.1, Math.PI * 1.95, true);
+  ctx.quadraticCurveTo(headX - 1, headY - 6.5, headX + 3, headY - 5);
   ctx.closePath();
   ctx.fill();
-  // Beak upper ridge
-  ctx.strokeStyle = '#b8860b';
-  ctx.lineWidth = 0.8;
+  // Chestnut nape extending from back of head
+  ctx.fillStyle = '#8B3A1A';
   ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 11);
-  ctx.lineTo(hw + 22, -hh - 8);
-  ctx.stroke();
-
-  // ── Throat pouch (signature pelican feature) ──
-  ctx.fillStyle = 'rgba(210, 160, 60, 0.6)';
-  ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 5);
-  ctx.quadraticCurveTo(hw + 16, -hh + 2, hw + 8, -hh + 1);
-  ctx.quadraticCurveTo(hw + 4, -hh - 1, hw + 8, -hh - 5);
+  ctx.arc(headX - 2, headY, headR - 1, Math.PI * 0.6, Math.PI * 1.2);
+  ctx.quadraticCurveTo(headX - 6, headY + 2, headX - 4, headY - 2);
+  ctx.closePath();
   ctx.fill();
-  // Pouch outline
-  ctx.strokeStyle = 'rgba(180, 130, 40, 0.5)';
-  ctx.lineWidth = 0.6;
-  ctx.beginPath();
-  ctx.moveTo(hw + 8, -hh - 5);
-  ctx.quadraticCurveTo(hw + 16, -hh + 2, hw + 8, -hh + 1);
-  ctx.stroke();
 
-  // ── Eye ──
-  ctx.fillStyle = '#FFF';
+  // ── 6. Eye — PALE YELLOW iris ──
+  // Blue-gray eye ring
+  ctx.fillStyle = '#7a8a9a';
   ctx.beginPath();
-  ctx.arc(hw + 5, -hh - 11, 2.5, 0, Math.PI * 2);
+  ctx.arc(headX + 2.5, headY - 0.5, 3, 0, Math.PI * 2);
   ctx.fill();
+  // Pale yellow iris
+  ctx.fillStyle = '#E8D44D';
+  ctx.beginPath();
+  ctx.arc(headX + 2.5, headY - 0.5, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  // Dark pupil
   ctx.fillStyle = '#1a1a1a';
   ctx.beginPath();
-  ctx.arc(hw + 5.5, -hh - 11, 1.5, 0, Math.PI * 2);
+  ctx.arc(headX + 2.8, headY - 0.5, 1.1, 0, Math.PI * 2);
   ctx.fill();
-  // Eye highlight
+  // Tiny white highlight
   ctx.fillStyle = '#FFF';
   ctx.beginPath();
-  ctx.arc(hw + 6, -hh - 11.5, 0.5, 0, Math.PI * 2);
+  ctx.arc(headX + 3.3, headY - 1.2, 0.5, 0, Math.PI * 2);
   ctx.fill();
 
-  // ── Feet (tucked, visible during flight) ──
-  ctx.strokeStyle = '#D4A017';
-  ctx.lineWidth = 1;
+  // ── 7. Beak — LONG, gray-beige, hooked tip ──
+  const beakBase = headX + headR - 2;
+  const beakY = headY + 1;
+  const beakLen = 22;
+  // Upper mandible
+  ctx.fillStyle = '#9e9685';
   ctx.beginPath();
-  ctx.moveTo(2, hh - 1);
-  ctx.lineTo(5, hh + 5);
-  ctx.moveTo(0, hh - 1);
-  ctx.lineTo(-2, hh + 5);
+  ctx.moveTo(beakBase, beakY - 2.5);
+  ctx.lineTo(beakBase + beakLen, beakY - 0.5);
+  ctx.quadraticCurveTo(beakBase + beakLen + 1, beakY + 1, beakBase + beakLen - 1, beakY + 1.5); // hook
+  ctx.lineTo(beakBase, beakY);
+  ctx.closePath();
+  ctx.fill();
+  // Upper ridge (darker)
+  ctx.strokeStyle = '#7a736a';
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(beakBase + 1, beakY - 2);
+  ctx.lineTo(beakBase + beakLen - 1, beakY - 0.3);
+  ctx.stroke();
+  // Lower mandible
+  ctx.fillStyle = '#a8a090';
+  ctx.beginPath();
+  ctx.moveTo(beakBase, beakY + 0.5);
+  ctx.lineTo(beakBase + beakLen - 2, beakY + 1.5);
+  ctx.lineTo(beakBase + beakLen - 3, beakY + 2.5);
+  ctx.lineTo(beakBase, beakY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // Mandible seam/gap
+  ctx.strokeStyle = 'rgba(60, 50, 40, 0.4)';
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(beakBase + 2, beakY + 0.2);
+  ctx.lineTo(beakBase + beakLen - 2, beakY + 1.2);
+  ctx.stroke();
+
+  // ── 8. Throat/gular pouch — olive-green, droopy ──
+  const pouchX = beakBase + 4 + pouchSway * 0.3;
+  const pouchY = beakY + 2;
+  const pouchDroop = 8 + Math.sin(wp * 0.7) * 0.8;
+  ctx.fillStyle = '#6b7a3a';
+  ctx.beginPath();
+  ctx.moveTo(beakBase, pouchY);
+  ctx.lineTo(beakBase + beakLen - 4, pouchY + 1);
+  ctx.quadraticCurveTo(beakBase + beakLen - 8 + pouchSway, pouchY + pouchDroop, beakBase + 6 + pouchSway * 0.5, pouchY + pouchDroop - 1);
+  ctx.quadraticCurveTo(beakBase - 2 + pouchSway * 0.2, pouchY + pouchDroop * 0.5, beakBase - 1, pouchY + 1);
+  ctx.closePath();
+  ctx.fill();
+  // Pouch highlight (lighter olive)
+  ctx.fillStyle = 'rgba(138, 154, 80, 0.35)';
+  ctx.beginPath();
+  ctx.moveTo(beakBase + 4, pouchY + 2);
+  ctx.quadraticCurveTo(beakBase + 10 + pouchSway, pouchY + pouchDroop - 2, beakBase + 8 + pouchSway * 0.5, pouchY + pouchDroop - 3);
+  ctx.quadraticCurveTo(beakBase + 2, pouchY + pouchDroop * 0.4, beakBase + 2, pouchY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // Pouch outline
+  ctx.strokeStyle = 'rgba(80, 90, 40, 0.5)';
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(beakBase + beakLen - 4, pouchY + 1);
+  ctx.quadraticCurveTo(beakBase + beakLen - 8 + pouchSway, pouchY + pouchDroop, beakBase + 6 + pouchSway * 0.5, pouchY + pouchDroop - 1);
+  ctx.quadraticCurveTo(beakBase - 2 + pouchSway * 0.2, pouchY + pouchDroop * 0.5, beakBase - 1, pouchY + 1);
+  ctx.stroke();
+
+  // ── 9. Webbed feet — dark gray, totipalmate, tucked ──
+  ctx.strokeStyle = '#4a4a4a';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = 'rgba(90, 90, 90, 0.5)';
+  // Left foot
+  ctx.beginPath();
+  ctx.moveTo(-1, hh);
+  ctx.lineTo(-4, hh + 6);
+  ctx.lineTo(-1, hh + 5);
+  ctx.lineTo(1, hh + 7);
+  ctx.lineTo(3, hh + 5);
+  ctx.lineTo(5, hh + 6);
+  ctx.lineTo(2, hh);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Right foot
+  ctx.beginPath();
+  ctx.moveTo(5, hh);
+  ctx.lineTo(3, hh + 5);
+  ctx.lineTo(5, hh + 4);
+  ctx.lineTo(7, hh + 6);
+  ctx.lineTo(9, hh + 4);
+  ctx.lineTo(11, hh + 5);
+  ctx.lineTo(8, hh);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // Webbing lines between toes
+  ctx.strokeStyle = 'rgba(60, 60, 60, 0.4)';
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(-2, hh + 5);
+  ctx.lineTo(1, hh + 6);
+  ctx.moveTo(1, hh + 6);
+  ctx.lineTo(4, hh + 5);
+  ctx.moveTo(4, hh + 4);
+  ctx.lineTo(7, hh + 5);
+  ctx.moveTo(7, hh + 5);
+  ctx.lineTo(10, hh + 4);
   ctx.stroke();
 
   ctx.restore();
@@ -594,29 +1002,86 @@ function drawMenu() {
   pelican.wingPhase = performance.now() * 0.003;
   drawPelican();
 
-  // Instruction with pulsing opacity
-  const pulse = 0.6 + Math.sin(performance.now() / 500) * 0.4;
-  ctx.globalAlpha = pulse;
-  ctx.font = '20px "Georgia", serif';
-  ctx.fillStyle = '#FFF';
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-  ctx.lineWidth = 2;
-  ctx.strokeText('Tap or press Space to play', W / 2, H / 2 + 70);
-  ctx.fillText('Tap or press Space to play', W / 2, H / 2 + 70);
-  ctx.globalAlpha = 1;
+  // ── Difficulty Selector ──────────────────────────────────
+  const btnW = 120, btnH = 42, btnGap = 12;
+  const totalW = 3 * btnW + 2 * btnGap;
+  const startX = (W - totalW) / 2;
+  const btnY = H / 2 + 50;
+  const keys = ['easy', 'medium', 'hard'];
+  difficultyButtons = []; // reset each frame
 
-  // Best score (if any)
+  for (let i = 0; i < 3; i++) {
+    const key = keys[i];
+    const d = DIFFICULTIES[key];
+    const bx = startX + i * (btnW + btnGap);
+    const isSelected = (key === currentDifficulty);
+
+    // Store for hit-testing
+    difficultyButtons.push({ key, x: bx, y: btnY, w: btnW, h: btnH });
+
+    // Button background
+    ctx.fillStyle = isSelected ? 'rgba(255, 215, 0, 0.25)' : 'rgba(30, 15, 5, 0.55)';
+    ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = isSelected ? 2.5 : 1.5;
+    roundRect(bx, btnY, btnW, btnH, 10);
+
+    // Selected glow
+    if (isSelected) {
+      ctx.save();
+      ctx.shadowColor = '#FFD700';
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = '#FFD700';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bx + 10, btnY);
+      ctx.lineTo(bx + btnW - 10, btnY);
+      ctx.quadraticCurveTo(bx + btnW, btnY, bx + btnW, btnY + 10);
+      ctx.lineTo(bx + btnW, btnY + btnH - 10);
+      ctx.quadraticCurveTo(bx + btnW, btnY + btnH, bx + btnW - 10, btnY + btnH);
+      ctx.lineTo(bx + 10, btnY + btnH);
+      ctx.quadraticCurveTo(bx, btnY + btnH, bx, btnY + btnH - 10);
+      ctx.lineTo(bx, btnY + 10);
+      ctx.quadraticCurveTo(bx, btnY, bx + 10, btnY);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Button label
+    ctx.font = isSelected ? 'bold 16px "Georgia", serif' : '15px "Georgia", serif';
+    ctx.fillStyle = isSelected ? '#FFD700' : '#fde8c8';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.lineWidth = 1.5;
+    const label = d.emoji + ' ' + d.label;
+    ctx.strokeText(label, bx + btnW / 2, btnY + btnH / 2 + 6);
+    ctx.fillText(label, bx + btnW / 2, btnY + btnH / 2 + 6);
+  }
+
+  // Best score for selected difficulty
   if (bestScore > 0) {
     ctx.font = '16px "Georgia", serif';
     ctx.fillStyle = '#fde8c8';
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.lineWidth = 1.5;
-    ctx.strokeText('Best: ' + bestScore, W / 2, H / 2 + 100);
-    ctx.fillText('Best: ' + bestScore, W / 2, H / 2 + 100);
+    ctx.strokeText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, btnY + btnH + 28);
+    ctx.fillText('Best (' + DIFFICULTIES[currentDifficulty].label + '): ' + bestScore, W / 2, btnY + btnH + 28);
   }
+
+  // Instruction with pulsing opacity
+  const pulse = 0.6 + Math.sin(performance.now() / 500) * 0.4;
+  ctx.globalAlpha = pulse;
+  ctx.font = '18px "Georgia", serif';
+  ctx.fillStyle = '#FFF';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.strokeText('Tap or press Space to play', W / 2, btnY + btnH + 60);
+  ctx.fillText('Tap or press Space to play', W / 2, btnY + btnH + 60);
+  ctx.globalAlpha = 1;
 }
 
 function drawGameOver() {
+  const d = DIFFICULTIES[currentDifficulty];
+
   // Dim overlay
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
   ctx.fillRect(0, 0, W, H);
@@ -628,7 +1093,7 @@ function drawGameOver() {
   ctx.fillStyle = 'rgba(30, 15, 5, 0.7)';
   ctx.strokeStyle = '#D4A017';
   ctx.lineWidth = 2;
-  roundRect(panelX, panelY, 240, 200, 12);
+  roundRect(panelX, panelY, 240, 220, 12);
 
   // Game Over text
   ctx.font = 'bold 38px "Georgia", serif';
@@ -641,25 +1106,33 @@ function drawGameOver() {
   ctx.fillStyle = goGrad;
   ctx.fillText('Game Over', W / 2, panelY + 40);
 
+  // Difficulty label
+  ctx.font = '16px "Georgia", serif';
+  ctx.fillStyle = '#fde8c8';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeText(d.label + ' ' + d.emoji, W / 2, panelY + 65);
+  ctx.fillText(d.label + ' ' + d.emoji, W / 2, panelY + 65);
+
   // Score
   ctx.font = 'bold 28px "Georgia", serif';
   ctx.fillStyle = '#FFF';
   ctx.strokeStyle = '#2a1a00';
   ctx.lineWidth = 2;
-  ctx.strokeText('Score: ' + score, W / 2, panelY + 90);
-  ctx.fillText('Score: ' + score, W / 2, panelY + 90);
+  ctx.strokeText('Score: ' + score, W / 2, panelY + 100);
+  ctx.fillText('Score: ' + score, W / 2, panelY + 100);
 
   // Best score
   ctx.font = '22px "Georgia", serif';
   ctx.fillStyle = '#FFD700';
-  ctx.strokeText('Best: ' + bestScore, W / 2, panelY + 125);
-  ctx.fillText('Best: ' + bestScore, W / 2, panelY + 125);
+  ctx.strokeText('Best: ' + bestScore, W / 2, panelY + 135);
+  ctx.fillText('Best: ' + bestScore, W / 2, panelY + 135);
 
   // New best indicator
   if (score >= bestScore && score > 0) {
     ctx.font = 'bold 16px "Georgia", serif';
     ctx.fillStyle = '#ff6b6b';
-    ctx.fillText('★ NEW BEST! ★', W / 2, panelY + 155);
+    ctx.fillText('★ NEW BEST! ★', W / 2, panelY + 165);
   }
 
   // Restart instruction
@@ -669,8 +1142,8 @@ function drawGameOver() {
   ctx.fillStyle = '#fde8c8';
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
   ctx.lineWidth = 1.5;
-  ctx.strokeText('Tap to play again', W / 2, panelY + 185);
-  ctx.fillText('Tap to play again', W / 2, panelY + 185);
+  ctx.strokeText('Tap to play again', W / 2, panelY + 200);
+  ctx.fillText('Tap to play again', W / 2, panelY + 200);
   ctx.globalAlpha = 1;
 }
 
@@ -694,6 +1167,16 @@ function roundRect(x, y, w, h, r) {
 function gameLoop(now) {
   update(now);
 
+  let shaking = shakeTimer > 0;
+  if (shaking) {
+    ctx.save();
+    const sx = (Math.random() - 0.5) * shakeIntensity * 2;
+    const sy = (Math.random() - 0.5) * shakeIntensity * 2;
+    ctx.translate(sx, sy);
+    shakeTimer--;
+    shakeIntensity *= 0.85;
+  }
+
   if (state === 'menu') {
     drawMenu();
   } else if (state === 'playing') {
@@ -709,6 +1192,10 @@ function gameLoop(now) {
     drawPelican();
     drawScore();
     drawGameOver();
+  }
+
+  if (shaking) {
+    ctx.restore();
   }
 
   requestAnimationFrame(gameLoop);
